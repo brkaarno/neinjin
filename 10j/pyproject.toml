@@ -1,0 +1,17 @@
+[project]
+name = "10j"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12.1"
+dependencies = [
+    "click==8.1.8",
+    "ruff==0.11.0",
+]
+
+[tool.ruff]
+line-length = 100
+preview = true
+
+[tool.ruff.lint]
+select = ["E", "W", "RUF", "TRY", "PLC", "F", "UP024"]
+ignore = ["E305", "E302", "E731"]
