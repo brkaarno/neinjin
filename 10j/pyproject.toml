@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.12.1"
 dependencies = [
     "click==8.1.8",
+    "packaging==24.2",
     "ruff==0.11.0",
 ]
 
@@ -13,5 +14,6 @@ line-length = 100
 preview = true
 
 [tool.ruff.lint]
-select = ["E", "W", "RUF", "TRY", "PLC", "F", "UP024"]
+select = ["E", "W", "F", "RUF", "TRY", "PLC", "PLE", "PLW06",
+          "UP024", "UP018", "UP012", "UP006", "PLW15"]
 ignore = ["E305", "E302", "E731", "E111", "E114", "E117"]

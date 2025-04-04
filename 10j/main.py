@@ -1,12 +1,136 @@
 import click
 import subprocess
 import sys
-from typing import Tuple
 import os
+import re
+import platform
+from typing import Optional
+from pathlib import Path
+from packaging.version import Version
+
+
+def check_lib_deps_gmp():
+    def consider(path):
+        pass
+
+    match platform.system():
+        case "Darwin":
+            consider("/opt/homebrew/opt/gmp/lib/libgmp.10.dylib")
+        case "Linux":
+            consider("/usr/x86_64-linux-gnu/libgmp.so.10")
+
+
+def do_check_deps(report: bool):
+    def find_git_version() -> str:
+        # 'git version 2.43.0'
+        # 'git version 2.37.1 (Apple Git-137.1)'
+        git_version_full = subprocess.check_output(["git", "version"]).decode("utf-8")
+        git_version_mid = git_version_full.removeprefix("git version ")
+        return git_version_mid.split(" ")[0]
+
+    def find_clang_version() -> str:
+        # '''
+        # Ubuntu clang version 18.1.3 (1ubuntu1)
+        # Target: x86_64-pc-linux-gnu
+        # Thread model: posix
+        # InstalledDir: /usr/bin
+        # '''
+        #
+        # '''
+        # Apple clang version 14.0.0 (clang-1400.0.29.202)
+        # Target: arm64-apple-darwin22.6.0
+        # Thread model: posix
+        # InstalledDir: /Applications/Xcode.app/[...]/XcodeDefault.xctoolchain/usr/bin
+        # '''
+        clang_version_full = subprocess.check_output(["clang", "--version"]).decode("utf-8")
+        clang_version_m = re.search(r"clang version ([^ ]+)", clang_version_full)
+        assert clang_version_m is not None
+        return clang_version_m.group(1)
+
+    def find_opam_version() -> str:
+        return subprocess.check_output(["opam", "--version"]).decode("utf-8").rstrip()
+
+    git_version = find_git_version()
+    clang_version = find_clang_version()
+    opam_version = find_opam_version()
+
+    if Version(git_version) < Version("2.36"):
+        click.echo("Note: git version 2.36 or later is required")
+
+    if Version(clang_version) < Version("18"):
+        click.echo("Note: clang version 18 or later is required")
+
+    if report:
+        click.echo(f"{git_version=}")
+        click.echo(f"{clang_version=}")
+        click.echo(f"{opam_version=}")
 
 
 def trim_empty_marker(z: str) -> str:
     return z.stripprefix("z-")
+
+
+def find_repo_root_vcs_dir_A() -> Optional[str]:
+    """
+    Returns:
+        str or None: Absolute path to the project root directory, or None if not found.
+    """
+    try:
+        root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"], stderr=subprocess.PIPE, universal_newlines=True
+        ).strip()
+        return os.fspath(Path(root, ".git").resolve())
+    except subprocess.CalledProcessError:
+        try:
+            root = subprocess.check_output(
+                ["jj", "root"], stderr=subprocess.PIPE, universal_newlines=True
+            ).strip()
+            return os.path.join(os.path.abspath(root), ".jj")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return None
+
+
+def find_repo_root_dir() -> Optional[str]:
+    vcsdir = find_repo_root_vcs_dir_A()
+    if not vcsdir:
+        return None
+    return os.path.dirname(vcsdir)
+
+
+def find_repo_root_vcs_dir_B(start_dir=None):
+    """
+    Walk up from the current directory (or specified directory) towards the filesystem root,
+    looking for directories named '.jj' or '.git' and return the full path of the first
+    such directory found, or None if no such directory was found.
+
+    Args:
+        start_dir (str, optional): Starting directory to search from. Defaults to current directory.
+
+    Returns:
+        str or None: Full path to the first '.jj' or '.git' directory found, or None if not found.
+    """
+    if start_dir is None:
+        start_dir = os.getcwd()
+
+    # Convert to absolute path to handle relative paths
+    current_dir = os.path.abspath(start_dir)
+
+    # Keep going until we hit the filesystem root
+    while True:
+        # Check for .jj or .git in the current directory
+        for repo_dir in [".jj", ".git"]:
+            potential_path = os.path.join(current_dir, repo_dir)
+            if os.path.isdir(potential_path):
+                return potential_path
+
+        # Move up one directory
+        parent_dir = os.path.dirname(current_dir)
+
+        # If we've reached the filesystem root, stop searching
+        if parent_dir == current_dir:
+            return None
+
+        current_dir = parent_dir
 
 
 def path_bytes_to_str(b: bytes) -> str:
@@ -22,12 +146,16 @@ def do_fmt_py():
     subprocess.check_call("uv tool run ruff format".split())
 
 
-def do_check_py():
-    subprocess.check_call("uv tool run ruff check".split())
+def do_check_py_fmt():
     subprocess.check_call("uv tool run ruff format --check".split())
 
 
-def parse_git_name_status_line(bs: bytes) -> Tuple[str, bytes]:
+def do_check_py():
+    subprocess.check_call("uv tool run ruff check".split())
+    do_check_py_fmt()
+
+
+def parse_git_name_status_line(bs: bytes) -> tuple[str, bytes]:
     """
     >>> parse_git_name_status_line(b'A       .gitignore')
     ("A", b'.gitignore')
@@ -80,9 +208,34 @@ def do_check_git_incoming_filesizes(base, head) -> None:
     check_sizes_via_git_name_status(lines, max_file_size, repo_root)
 
 
+def do_check_for_git_merges(base, head) -> None:
+    if not base or not head:
+        click.echo("base or head missing/empty", err=True)
+        sys.exit(1)
+
+    # Alternative construction: given a merge commit `merge` and
+    # assuming that `head` is the parent from the feature branch,
+    # then `base` should be equal to $(git merge-base head merge).
+
+    merges = subprocess.check_output(["git", "rev-list", "--merges", f"{base}..{head}"])
+    # To exclude certain commits from the above, use --invert-grep
+    # with additional flags to search author/committer/etc.
+    if merges:
+        click.echo("Please rebase your branch by running `git rebase main`", err=True)
+        sys.exit(1)
+
+
 @click.group()
 def cli():
     pass
+
+
+@cli.command()
+def status():
+    click.echo(f"{find_repo_root_dir()=}")
+    click.echo(f"{find_repo_root_vcs_dir_A()=}")
+    click.echo(f"{find_repo_root_vcs_dir_B()=}")
+    do_check_deps(report=True)
 
 
 @cli.command()
@@ -93,6 +246,11 @@ def fmt_py():
 @cli.command()
 def check_py():
     do_check_py()
+
+
+@cli.command()
+def check_deps():
+    do_check_deps(report=True)
 
 
 @cli.command()
@@ -109,6 +267,13 @@ def check_all():
 @click.option("--head", required=True, help="head ref", type=str)
 def check_git_incoming_filesizes(base, head):
     do_check_git_incoming_filesizes(base, head)
+
+
+@cli.command()
+@click.option("--base", required=True, help="base ref", type=str)
+@click.option("--head", required=True, help="head ref", type=str)
+def check_for_git_merges(base, head):
+    do_check_for_git_merges(base, head)
 
 
 if __name__ == "__main__":
