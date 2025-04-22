@@ -4,9 +4,9 @@ import sys
 import os
 import re
 import platform
-from typing import Optional
-from pathlib import Path
 from packaging.version import Version
+
+import repo_root
 
 
 def check_lib_deps_gmp():
@@ -70,69 +70,6 @@ def trim_empty_marker(z: str) -> str:
     return z.stripprefix("z-")
 
 
-def find_repo_root_vcs_dir_A() -> Optional[str]:
-    """
-    Returns:
-        str or None: Absolute path to the project root directory, or None if not found.
-    """
-    try:
-        root = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"], stderr=subprocess.PIPE, universal_newlines=True
-        ).strip()
-        return os.fspath(Path(root, ".git").resolve())
-    except subprocess.CalledProcessError:
-        try:
-            root = subprocess.check_output(
-                ["jj", "root"], stderr=subprocess.PIPE, universal_newlines=True
-            ).strip()
-            return os.path.join(os.path.abspath(root), ".jj")
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return None
-
-
-def find_repo_root_dir() -> Optional[str]:
-    vcsdir = find_repo_root_vcs_dir_A()
-    if not vcsdir:
-        return None
-    return os.path.dirname(vcsdir)
-
-
-def find_repo_root_vcs_dir_B(start_dir=None):
-    """
-    Walk up from the current directory (or specified directory) towards the filesystem root,
-    looking for directories named '.jj' or '.git' and return the full path of the first
-    such directory found, or None if no such directory was found.
-
-    Args:
-        start_dir (str, optional): Starting directory to search from. Defaults to current directory.
-
-    Returns:
-        str or None: Full path to the first '.jj' or '.git' directory found, or None if not found.
-    """
-    if start_dir is None:
-        start_dir = os.getcwd()
-
-    # Convert to absolute path to handle relative paths
-    current_dir = os.path.abspath(start_dir)
-
-    # Keep going until we hit the filesystem root
-    while True:
-        # Check for .jj or .git in the current directory
-        for repo_dir in [".jj", ".git"]:
-            potential_path = os.path.join(current_dir, repo_dir)
-            if os.path.isdir(potential_path):
-                return potential_path
-
-        # Move up one directory
-        parent_dir = os.path.dirname(current_dir)
-
-        # If we've reached the filesystem root, stop searching
-        if parent_dir == current_dir:
-            return None
-
-        current_dir = parent_dir
-
-
 def path_bytes_to_str(b: bytes) -> str:
     """Convert a file path byte string to printable text."""
     try:
@@ -151,7 +88,7 @@ def do_check_py_fmt():
 
 
 def do_check_py():
-    subprocess.check_call("uv tool run ruff check".split())
+    subprocess.check_call("uv tool run ruff check --quiet".split())
     do_check_py_fmt()
 
 
@@ -194,6 +131,9 @@ def do_check_git_incoming_filesizes(base, head) -> None:
 
     max_file_size = 987654
 
+    # This is intended to run in CI, so we assume a standard git repo,
+    # without accommodating jj users (yet). This shouldn't be a big deal
+    # because jj already implements file size checks.
     repo_root = subprocess.check_output(["git", "rev-parse", "--show-toplevel"]).rstrip()
 
     # The trailing -- ensures git parses the inputs as revisions not paths.
@@ -232,9 +172,7 @@ def cli():
 
 @cli.command()
 def status():
-    click.echo(f"{find_repo_root_dir()=}")
-    click.echo(f"{find_repo_root_vcs_dir_A()=}")
-    click.echo(f"{find_repo_root_vcs_dir_B()=}")
+    click.echo(f"{repo_root.find_repo_root_dir_Path()=}")
     do_check_deps(report=True)
 
 
@@ -245,7 +183,10 @@ def fmt_py():
 
 @cli.command()
 def check_py():
-    do_check_py()
+    try:
+        do_check_py()
+    except subprocess.CalledProcessError:
+        sys.exit(1)
 
 
 @cli.command()
@@ -259,7 +200,10 @@ def check_all():
     # another, and doing so is quite awkward.
     # We instead implement functionality in the do_*() functions
     # and then make each command be a thin wrapper to invoke the fn.
-    do_check_py()
+    try:
+        do_check_py()
+    except subprocess.CalledProcessError:
+        sys.exit(1)
 
 
 @cli.command()

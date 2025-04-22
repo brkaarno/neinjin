@@ -1,3 +1,5 @@
 *~
 .*.swo
 .*.swp
+_local
+__pycache__
