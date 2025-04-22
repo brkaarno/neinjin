@@ -24,7 +24,12 @@ jobs:
 
       - name: Incoming file size checks
         if: github.base_ref != ''
-        run: cli/10j check-git-incoming-filesizes --base ${{ github.base_ref }} --head ${{ github.head_ref }}
+        run: |
+          git branch -v
+          echo '----------------'
+          git ls-remote
+          echo '----------------'
+          cli/10j check-git-incoming-filesizes --base ${{ github.base_ref }} --head ${{ github.head_ref }}
 
       - name: Git history structure linting
         if: github.base_ref != ''
