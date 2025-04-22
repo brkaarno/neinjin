@@ -58,7 +58,7 @@ def do_check_deps(report: bool):
 
     git_version = find_git_version()
     clang_version = find_clang_version()
-    opam_version = find_opam_version()
+    #opam_version = find_opam_version()
 
     if Version(git_version) < Version("2.36"):
         click.echo("Note: git version 2.36 or later is required")
@@ -69,7 +69,7 @@ def do_check_deps(report: bool):
     if report:
         click.echo(f"{git_version=}")
         click.echo(f"{clang_version=}")
-        click.echo(f"{opam_version=}")
+        #click.echo(f"{opam_version=}")
 
 
 def trim_empty_marker(z: str) -> str:
