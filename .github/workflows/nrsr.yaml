@@ -16,6 +16,9 @@ jobs:
       - name: Provision uv
         run: sh cli/_provision.sh
 
+      - name: Health check
+        run: cli/10j status
+
       - name: Code linting and formatting checks
         run: cli/10j check-all
 

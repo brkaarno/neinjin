@@ -9,6 +9,12 @@ from packaging.version import Version
 import repo_root
 
 
+def check_uv(args: list[str]):
+    # The args here should be kept in sync with the 10j script.
+    localdir = repo_root.localdir()
+    subprocess.check_call([localdir / "uv", "--config-file", localdir / "uv.toml", *args])
+
+
 def check_lib_deps_gmp():
     def consider(path):
         pass
@@ -80,15 +86,15 @@ def path_bytes_to_str(b: bytes) -> str:
 
 
 def do_fmt_py():
-    subprocess.check_call("uv tool run ruff format".split())
+    check_uv("tool run ruff format".split())
 
 
 def do_check_py_fmt():
-    subprocess.check_call("uv tool run ruff format --check".split())
+    check_uv("tool run ruff format --check".split())
 
 
 def do_check_py():
-    subprocess.check_call("uv tool run ruff check --quiet".split())
+    check_uv("tool run ruff check --quiet".split())
     do_check_py_fmt()
 
 
@@ -173,6 +179,7 @@ def cli():
 @cli.command()
 def status():
     click.echo(f"{repo_root.find_repo_root_dir_Path()=}")
+    click.echo(f"{sys.argv[0]=}")
     do_check_deps(report=True)
 
 

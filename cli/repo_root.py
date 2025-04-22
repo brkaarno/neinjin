@@ -1,10 +1,13 @@
 from pathlib import Path
-from typing import Optional
 import os
 from sys import argv
 
 
-def find_repo_root_dir_Path(start_dir=None) -> Optional[Path]:
+def localdir() -> Path:
+    return find_repo_root_dir_Path() / "_local"
+
+
+def find_repo_root_dir_Path(start_dir=None) -> Path | None:
     def validate_candidate_dir(p: Path):
         return (p / "cli" / "_provision.sh").is_file()
 
