@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  inspect:
+  not-rocket-science-checks:
     runs-on: ubuntu-latest
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
