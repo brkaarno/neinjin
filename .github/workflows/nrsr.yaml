@@ -24,7 +24,10 @@ jobs:
 
       - name: Incoming file size checks
         if: github.base_ref != ''
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
         run: |
+          echo "$GITHUB_CONTEXT"
           cli/10j check-git-incoming-filesizes \
                --base refs/heads/${{ github.base_ref }} \
                --head refs/heads/${{ github.head_ref }}
