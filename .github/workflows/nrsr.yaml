@@ -1,0 +1,28 @@
+name: not-rocket-science
+
+on:
+  push:
+    branches: [ "test/**" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v4
+
+      - name: Provision uv
+        run: sh 10j/_provision.sh
+
+      - name: Code linting and formatting checks
+        run: cli/10j check-all
+
+      - name: Incoming file size checks
+        if: github.base_ref != ''
+        run: cli/10j check-git-incoming-filesizes --base ${{ github.base_ref }} --head ${{ github.head_ref }}
+
+      - name: Git history structure linting
+        if: github.base_ref != ''
+        run: cli/10j check-for-git-merges --base ${{ github.base_ref }} --head ${{ github.head_ref }}
