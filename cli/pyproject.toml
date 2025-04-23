@@ -2,7 +2,7 @@
 name = "10j"
 version = "0.1.0"
 description = "Add your description here"
-requires-python = ">=3.12.1"
+requires-python = ">=3.12.3"
 dependencies = [
     "click==8.1.8",
     "packaging==24.2",

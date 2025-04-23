@@ -9,6 +9,31 @@ from packaging.version import Version
 import repo_root
 
 
+def check_call_uv(args: list[str]):
+    # The args here should be kept in sync with the 10j script.
+    localdir = repo_root.localdir()
+    subprocess.check_call([localdir / "uv", "--config-file", localdir / "uv.toml", *args])
+
+
+def run_output_git(args: list[str], check=False):
+    jjdir = repo_root.find_repo_root_dir_Path() / ".jj"
+    if jjdir.is_dir():
+        gitroot = subprocess.check_output(["jj", "git", "root"]).decode("utf-8")
+        cp = subprocess.run(["git", "--git-root", gitroot, *args], check=False, capture_output=True)
+    else:
+        cp = subprocess.run(["git", *args], check=False, capture_output=True)
+
+    if cp.stderr:
+        click.echo(cp.stderr, err=True)
+    if check:
+        cp.check_returncode()
+    return cp.stdout
+
+
+def check_output_git(args: list[str]):
+    return run_output_git(args, check=True)
+
+
 def check_lib_deps_gmp():
     def consider(path):
         pass
@@ -52,7 +77,6 @@ def do_check_deps(report: bool):
 
     git_version = find_git_version()
     clang_version = find_clang_version()
-    opam_version = find_opam_version()
 
     if Version(git_version) < Version("2.36"):
         click.echo("Note: git version 2.36 or later is required")
@@ -63,7 +87,9 @@ def do_check_deps(report: bool):
     if report:
         click.echo(f"{git_version=}")
         click.echo(f"{clang_version=}")
-        click.echo(f"{opam_version=}")
+        check_call_uv("run ruff version".split())
+        check_call_uv("tool dir".split())
+        check_call_uv("tool list".split())
 
 
 def trim_empty_marker(z: str) -> str:
@@ -80,15 +106,15 @@ def path_bytes_to_str(b: bytes) -> str:
 
 
 def do_fmt_py():
-    subprocess.check_call("uv tool run ruff format".split())
+    check_call_uv("run ruff format".split())
 
 
 def do_check_py_fmt():
-    subprocess.check_call("uv tool run ruff format --check".split())
+    check_call_uv("run ruff format --check".split())
 
 
 def do_check_py():
-    subprocess.check_call("uv tool run ruff check --quiet".split())
+    check_call_uv("run ruff check --quiet".split())
     do_check_py_fmt()
 
 
@@ -102,67 +128,52 @@ def parse_git_name_status_line(bs: bytes) -> tuple[str, bytes]:
     return (status, path)
 
 
-def check_sizes_via_git_name_status(bslines, max_file_size: int, repo_root: bytes) -> None:
-    for line in bslines:
-        status, localpath = parse_git_name_status_line(line)
-        if status in ("A", "M"):
-            path = os.path.join(repo_root, localpath)
-            if os.path.isfile(path):
-                size = os.path.getsize(path)
-                if size > max_file_size:
-                    click.echo(
-                        " ".join([
-                            "File exceeds maximum permitted size:",
-                            path_bytes_to_str(path),
-                            "\t",
-                            f"size was {size} > {max_file_size}",
-                        ]),
-                        err=True,
-                    )
-                    sys.exit(1)
-            else:
-                print("non-file path ", path)
-
-
-def do_check_git_incoming_filesizes(base, head) -> None:
-    if not base or not head:
-        click.echo("base or head missing/empty", err=True)
-        sys.exit(1)
+def do_check_repo_file_sizes() -> bool:
+    """Returns True if the check passed, False otherwise"""
 
     max_file_size = 987654
 
-    # This is intended to run in CI, so we assume a standard git repo,
-    # without accommodating jj users (yet). This shouldn't be a big deal
-    # because jj already implements file size checks.
-    repo_root = subprocess.check_output(["git", "rev-parse", "--show-toplevel"]).rstrip()
+    rootdir = repo_root.find_repo_root_dir_Path()
+    # fmt: off
+    exclusions = [
+        "-path", rootdir / ".git", "-o",
+        "-path", rootdir / ".jj", "-o",
+        "-path", rootdir / "cli" / ".venv", "-o",
+        "-path", rootdir / "_local",
+    ]
+    cmd = [
+        "find", rootdir, "(", *exclusions, ")", "-prune", "-o",
+            "-type", "f", "-size", f"+{max_file_size}c", "-print",
+    ]
+    # fmt: on
+    lines = subprocess.check_output(cmd, stderr=subprocess.PIPE).split(b"\n")
+    lines = [line for line in lines if line != b""]
+    if not lines:
+        return True
 
-    # The trailing -- ensures git parses the inputs as revisions not paths.
-    lines = subprocess.check_output(["git", "diff", "--name-status", head, base, "--"]).split(b"\n")
-    check_sizes_via_git_name_status(lines, max_file_size, repo_root)
+    # See https://git-scm.org/docs/git-check-ignore for details of the output format.
+    # We don't check the return value because it is non-zero when no path is ignored,
+    # which is not an error case in this context.
+    lines = run_output_git(["check-ignore", "--verbose", "--non-matching", *lines]).split(b"\n")
+    non_ignored = []
+    for line in lines:
+        if line == b"":
+            continue
 
-    # Check staged changes for convenience. In CI this will be a no-op.
-    # We assume here that the on-disk size matches the staged size.
-    # This might be wrong, but it doesn't matter, since it will be
-    # caught by CI even if a file is missed before being pushed to CI.
-    lines = subprocess.check_output(["git", "diff", "--name-status", "--cached"]).split(b"\n")
-    check_sizes_via_git_name_status(lines, max_file_size, repo_root)
+        fields, pathname = line.split(b"\t")
+        if fields == b"::":
+            # Fields are source COLON linenum COLON pattern
+            # If all fields are empty, the pathname did not match any pattern,
+            # which is to say: it was not ignored.
+            non_ignored.append(pathname)
 
+    if not non_ignored:
+        return True
 
-def do_check_for_git_merges(base, head) -> None:
-    if not base or not head:
-        click.echo("base or head missing/empty", err=True)
-        sys.exit(1)
-
-    # Alternative construction: given a merge commit `merge` and
-    # assuming that `head` is the parent from the feature branch,
-    # then `base` should be equal to $(git merge-base head merge).
-
-    merges = subprocess.check_output(["git", "rev-list", "--merges", f"{base}..{head}"])
-    # To exclude certain commits from the above, use --invert-grep
-    # with additional flags to search author/committer/etc.
-    if merges:
-        click.echo("Please rebase your branch by running `git rebase main`", err=True)
-        sys.exit(1)
+    click.echo("ERROR: Unexpected large files:", err=True)
+    for line in non_ignored:
+        click.echo("\t" + path_bytes_to_str(line), err=True)
+    return False
 
 
 @click.group()
@@ -173,6 +184,7 @@ def cli():
 @cli.command()
 def status():
     click.echo(f"{repo_root.find_repo_root_dir_Path()=}")
+    click.echo(f"{sys.argv[0]=}")
     do_check_deps(report=True)
 
 
@@ -195,7 +207,7 @@ def check_deps():
 
 
 @cli.command()
-def check_all():
+def check_star():
     # The Click documentation discourages invoking one command from
     # another, and doing so is quite awkward.
     # We instead implement functionality in the do_*() functions
@@ -207,17 +219,9 @@ def check_all():
 
 
 @cli.command()
-@click.option("--base", required=True, help="base ref", type=str)
-@click.option("--head", required=True, help="head ref", type=str)
-def check_git_incoming_filesizes(base, head):
-    do_check_git_incoming_filesizes(base, head)
-
-
-@cli.command()
-@click.option("--base", required=True, help="base ref", type=str)
-@click.option("--head", required=True, help="head ref", type=str)
-def check_for_git_merges(base, head):
-    do_check_for_git_merges(base, head)
+def check_repo_file_sizes():
+    if not do_check_repo_file_sizes():
+        sys.exit(1)
 
 
 if __name__ == "__main__":
