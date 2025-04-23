@@ -20,18 +20,7 @@ jobs:
         run: cli/10j status
 
       - name: Code linting and formatting checks
-        run: cli/10j check-all
+        run: cli/10j check-star
 
-      - name: Incoming file size checks
-        if: github.base_ref != ''
-        run: |
-          cli/10j check-git-incoming-filesizes \
-               --base ${{ github.event.pull_request.base.sha }} \
-               --head ${{ github.event.pull_request.head.sha }}
-
-      - name: Git history structure linting
-        if: github.base_ref != ''
-        run: |
-          cli/10j check-for-git-merges \
-               --base ${{ github.event.pull_request.base.sha }} \
-               --head ${{ github.event.pull_request.head.sha }}
+      - name: Ensure no large files were accidentally added
+        run: cli/10j check-repo-file-sizes
