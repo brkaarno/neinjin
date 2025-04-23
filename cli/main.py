@@ -132,7 +132,9 @@ def do_check_repo_file_sizes() -> bool:
     # See https://git-scm.org/docs/git-check-ignore for details of the output format.
     # We don't check the return value because it is non-zero when no path is ignored,
     # which is not an error case in this context.
-    lines = run_output_git(["check-ignore", "--verbose", "--non-matching", *lines]).split(b"\n")
+    lines = hermetic.run_output_git(["check-ignore", "--verbose", "--non-matching", *lines]).split(
+        b"\n"
+    )
     non_ignored = []
     for line in lines:
         if line == b"":
