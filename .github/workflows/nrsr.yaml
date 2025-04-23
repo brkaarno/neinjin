@@ -19,12 +19,13 @@ jobs:
       - name: Health check
         run: |
           cli/10j status
-          find / -name ruff
+          find /tmp -name ruff || find $HOME -name ruff
 
       - name: Code linting and formatting checks
         run: |
           cli/10j check-star
-          find / -name ruff
+          find /tmp -name ruff || find $HOME -name ruff
+          ls /
 
       - name: Ensure no large files were accidentally added
         run: cli/10j check-repo-file-sizes
