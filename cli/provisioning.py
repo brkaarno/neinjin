@@ -72,7 +72,9 @@ def provision_opam_binary_into(opam_version: str, localdir: Path, opamroot: Path
     # Otherwise, we'll need to run the installer to get it.
     print("Downloading a local copy of opam...")
     subprocess.check_call(["sh", installer_sh, "--download-only"])
-    tagged = Path(".").glob(f"opam-{opam_version}-*")
+    tagged = list(Path(".").glob(f"opam-{opam_version}-*"))
+    assert len(tagged) == 1
+    tagged = tagged[0]
     subprocess.check_call(["chmod", "+x", tagged])
     tagged.replace(localdir / "opam")
     hermetic.check_call_opam(["--version"])
