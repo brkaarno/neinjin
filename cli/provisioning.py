@@ -77,7 +77,6 @@ def provision_opam_binary_into(opam_version: str, localdir: Path, opamroot: Path
     tagged = tagged[0]
     subprocess.check_call(["chmod", "+x", tagged])
     tagged.replace(localdir / "opam")
-    hermetic.check_call_opam(["--version"])
 
 
 def provision_opam_into(localdir: Path):
