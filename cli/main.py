@@ -1,37 +1,15 @@
-import click
 import subprocess
 import sys
 import os
 import re
 import platform
+
+import click
 from packaging.version import Version
 
 import repo_root
-
-
-def check_call_uv(args: list[str]):
-    # The args here should be kept in sync with the 10j script.
-    localdir = repo_root.localdir()
-    subprocess.check_call([localdir / "uv", "--config-file", localdir / "uv.toml", *args])
-
-
-def run_output_git(args: list[str], check=False):
-    jjdir = repo_root.find_repo_root_dir_Path() / ".jj"
-    if jjdir.is_dir():
-        gitroot = subprocess.check_output(["jj", "git", "root"]).decode("utf-8")
-        cp = subprocess.run(["git", "--git-root", gitroot, *args], check=False, capture_output=True)
-    else:
-        cp = subprocess.run(["git", *args], check=False, capture_output=True)
-
-    if cp.stderr:
-        click.echo(cp.stderr, err=True)
-    if check:
-        cp.check_returncode()
-    return cp.stdout
-
-
-def check_output_git(args: list[str]):
-    return run_output_git(args, check=True)
+import provisioning
+import hermetic
 
 
 def check_lib_deps_gmp():
@@ -87,9 +65,9 @@ def do_check_deps(report: bool):
     if report:
         click.echo(f"{git_version=}")
         click.echo(f"{clang_version=}")
-        check_call_uv("run ruff version".split())
-        check_call_uv("tool dir".split())
-        check_call_uv("tool list".split())
+        hermetic.check_call_uv("run ruff version".split())
+        hermetic.check_call_uv("tool dir".split())
+        hermetic.check_call_uv("tool list".split())
 
 
 def trim_empty_marker(z: str) -> str:
@@ -106,15 +84,15 @@ def path_bytes_to_str(b: bytes) -> str:
 
 
 def do_fmt_py():
-    check_call_uv("run ruff format".split())
+    hermetic.check_call_uv("run ruff format".split())
 
 
 def do_check_py_fmt():
-    check_call_uv("run ruff format --check".split())
+    hermetic.check_call_uv("run ruff format --check".split())
 
 
 def do_check_py():
-    check_call_uv("run ruff check --quiet".split())
+    hermetic.check_call_uv("run ruff check --quiet".split())
     do_check_py_fmt()
 
 
@@ -222,6 +200,17 @@ def check_star():
 def check_repo_file_sizes():
     if not do_check_repo_file_sizes():
         sys.exit(1)
+
+
+@cli.command()
+def provision():
+    provisioning.provision()
+
+
+@cli.command(context_settings={"ignore_unknown_options": True})
+@click.argument("args", nargs=-1)
+def opam(args: tuple[str, ...]):
+    hermetic.check_call_opam(args)
 
 
 if __name__ == "__main__":

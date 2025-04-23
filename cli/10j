@@ -14,5 +14,5 @@ if __name__ == "__main__":
         args = ["uv", "run", "--project", tenjdir, "--config-file", localcg, "cli/main.py"]
         os.execv(str(localuv), args + sys.argv[1:])
     else:
-        print("Before running 10j, please run     sh 10j/_provision.sh", file=sys.stderr)
+        print("Before running 10j, please run     sh 10j/sh/provision.sh", file=sys.stderr)
         sys.exit(1)
