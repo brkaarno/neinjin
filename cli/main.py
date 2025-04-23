@@ -87,6 +87,8 @@ def do_check_deps(report: bool):
     if report:
         click.echo(f"{git_version=}")
         click.echo(f"{clang_version=}")
+        check_call_uv("run ruff version".split())
+        check_call_uv("tool dir".split())
         check_call_uv("tool list".split())
 
 
@@ -104,15 +106,15 @@ def path_bytes_to_str(b: bytes) -> str:
 
 
 def do_fmt_py():
-    check_call_uv("tool run -vv ruff format".split())
+    check_call_uv("run ruff format".split())
 
 
 def do_check_py_fmt():
-    check_call_uv("tool run -vv ruff format --check".split())
+    check_call_uv("run ruff format --check".split())
 
 
 def do_check_py():
-    check_call_uv("tool run -vv ruff check --quiet".split())
+    check_call_uv("run ruff check --quiet".split())
     do_check_py_fmt()
 
 
