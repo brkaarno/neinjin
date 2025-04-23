@@ -12,7 +12,6 @@ dependencies = [
 [tool.ruff]
 line-length = 100
 preview = true
-extend-include = ["10j"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "RUF", "TRY", "PLC", "PLE", "PLW06",

@@ -14,7 +14,6 @@ import click
 import repo_root
 import hermetic
 from sha256sum import compute_sha256
-import configprov
 
 
 class ProvisioningError(Exception):
@@ -162,23 +161,6 @@ def introspect_clang_platform(version: str) -> str:
                 file=sys.stderr,
             )
             return None
-
-
-def provision_v0(deps: list[str], interactive: bool):
-    reporoot = repo_root.find_repo_root_dir_Path()
-    clangversion = "18.1.8"
-    clangplatform = introspect_clang_platform(clangversion)
-    if clangplatform:
-        clangurl = clang_plus_llvm_url(clangversion, clangplatform)
-        targetdir = Path(reporoot, "_local")
-        clangroot = download_and_extract_clang(clangurl, targetdir)
-
-        if clangroot is not None:
-            config = {
-                "paths.clang": clangroot / "bin" / "clang-18",
-                "paths.llvm-config": clangroot / "bin" / "llvm-config-18",
-            }
-            configprov.config_overwrite(targetdir / "10j.config.json", config)
 
 
 # The extraction process is about twice as slow on macOS
