@@ -17,14 +17,10 @@ jobs:
         run: sh cli/_provision.sh
 
       - name: Health check
-        run: |
-          cli/10j status
-          find $HOME -name ruff
+        run: cli/10j status
 
       - name: Code linting and formatting checks
-        run: |
-          cli/10j check-star
-          find $HOME -name ruff
+        run: cli/10j check-star
 
       - name: Ensure no large files were accidentally added
         run: cli/10j check-repo-file-sizes
