@@ -17,10 +17,16 @@ jobs:
         run: sh cli/_provision.sh
 
       - name: Health check
-        run: cli/10j status
+        run: |
+          cli/10j status
+          sha256sum cli/.venv/bin/ruff
+          cli/.venv/bin/ruff --version
 
       - name: Code linting and formatting checks
-        run: cli/10j check-star
+        run: |
+          cli/10j check-star
+          sha256sum cli/.venv/bin/ruff
+          cli/.venv/bin/ruff --version
 
       - name: Ensure no large files were accidentally added
         run: cli/10j check-repo-file-sizes
