@@ -13,7 +13,13 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v4
 
-      - name: Provision uv
+      - uses: ocaml/setup-ocaml@bf20b49633a2fa6e59af045f672c5a901311cb95 # v3.3.0
+        with:
+          ocaml-compiler: 5
+          # Allow CI's version of OCaml to float, even if the usual provisioning
+          # process would pin it.
+
+      - name: Provision dependencies
         run: sh cli/sh/provision.sh
 
       - name: Health check

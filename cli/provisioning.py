@@ -97,45 +97,57 @@ def provision_opam_into(localdir: Path):
 
     provision_opam_binary_into(opam_version, localdir)
 
-    opamroot = localdir / "opamroot"
-    if opamroot.is_dir():
-        shutil.rmtree(opamroot)
+    if hermetic.opam_non_hermetic():
+        say("================================================================")
+        say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
+        say("----------------------------------------------------------------")
+    else:
+        opamroot = localdir / "opamroot"
+        if opamroot.is_dir():
+            shutil.rmtree(opamroot)
 
-    # Bubblewrap does not work inside Docker containers, at least not without
-    # heinous workarounds, if we're in Docker then we don't really need it anyway.
-    # So we'll try running a trivial command with it; if it fails, we'll tell opam
-    # not to use it.
-    try:
-        sandboxing_arg = []
-        subprocess.check_call([hermetic.xj_build_deps(localdir) / "bin" / "bwrap", "--", "true"])
-    except subprocess.CalledProcessError:
-        say("Oh! No working bubblewrap. Assuming this is because we're in Docker. Disabling it...")
-        sandboxing_arg = ["--disable-sandboxing"]
+        # Bubblewrap does not work inside Docker containers, at least not without
+        # heinous workarounds, if we're in Docker then we don't really need it anyway.
+        # So we'll try running a trivial command with it; if it fails, we'll tell opam
+        # not to use it.
+        try:
+            sandboxing_arg = []
+            subprocess.check_call([
+                hermetic.xj_build_deps(localdir) / "bin" / "bwrap",
+                "--",
+                "true",
+            ])
+        except subprocess.CalledProcessError:
+            say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
+            sandboxing_arg = ["--disable-sandboxing"]
 
-    say("================================================================")
-    say("Initializing opam; this will take about half a minute...")
-    say("      (subsequent output comes from `opam init --bare`)")
-    say("----------------------------------------------------------------")
-    say("")
-    hermetic.check_call_opam(
-        ["init", "--bare", "--no-setup", "--disable-completion", *sandboxing_arg],
-        eval_opam_env=False,
-    )
-    say("")
-    say("================================================================")
-    say("Installing OCaml; this will take a few minutes to compile...")
-    say("      (subsequent output comes from `opam switch create`)")
-    say("----------------------------------------------------------------")
+        say("================================================================")
+        say("Initializing opam; this will take about half a minute...")
+        say("      (subsequent output comes from `opam init --bare`)")
+        say("----------------------------------------------------------------")
+        say("")
+        hermetic.check_call_opam(
+            ["init", "--bare", "--no-setup", "--disable-completion", *sandboxing_arg],
+            eval_opam_env=False,
+        )
 
-    subprocess.check_call(["date"])
-    hermetic.check_call_opam(
-        ["switch", "create", "tenjin", ocaml_version, "--no-switch"],
-        eval_opam_env=False,
-        env_ext={"OPAMNOENVNOTICE": "1",
-                 "CC": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang"),
-                 "CXX": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang++"),},
-    )
-    subprocess.check_call(["date"])
+        say("")
+        say("================================================================")
+        say("Installing OCaml; this will take a few minutes to compile...")
+        say("      (subsequent output comes from `opam switch create`)")
+        say("----------------------------------------------------------------")
+
+        subprocess.check_call(["date"])
+        hermetic.check_call_opam(
+            ["switch", "create", "tenjin", ocaml_version, "--no-switch"],
+            eval_opam_env=False,
+            env_ext={
+                "OPAMNOENVNOTICE": "1",
+                "CC": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang"),
+                "CXX": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang++"),
+            },
+        )
+        subprocess.check_call(["date"])
 
     opam_version_seen = hermetic.run_opam(
         ["--version"], check=True, capture_output=True

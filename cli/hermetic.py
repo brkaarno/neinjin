@@ -1,4 +1,5 @@
 import subprocess
+import shutil
 from pathlib import Path
 import os
 
@@ -25,6 +26,11 @@ def opamroot(localdir: Path) -> Path:
     return localdir / "opamroot"
 
 
+def opam_non_hermetic() -> bool:
+    running_in_ci = "GITHUB_WORKSPACE" in os.environ
+    return running_in_ci and shutil.which("opam") is not None
+
+
 def run_opam(
     args: list[str], eval_opam_env=True, with_tenjin_deps=True, check=False, env_ext=None, **kwargs
 ) -> subprocess.CompletedProcess:
@@ -35,15 +41,29 @@ def run_opam(
         def shell_cmd(parts: list[str]) -> str:
             return " ".join(str(x) for x in parts)
 
-        maincmd = shell_cmd([localopam, *args, "--cli=2.3", "--root", opamroot(localdir)])
+        non_hermetic = opam_non_hermetic()
+        if non_hermetic:
+            # We can save about four minutes per run in CI by using the system opam.
+            # If it appears to be installed, use it.
+            opam_root_args = []
+        else:
+            opam_root_args = ["--root", opamroot(localdir)]
+
+        maincmd = shell_cmd([localopam, *args, "--cli=2.3", *opam_root_args])
 
         if eval_opam_env:
-            opam_env_cmd = (
-                f"{localopam} env  --cli=2.3 --root {opamroot(localdir)} "
-                + "--switch=tenjin --set-switch --set-root"
-            )
+            if non_hermetic:
+                # If we're using the system opam, we use the default switch.
+                assert shell_cmd(opam_root_args) == ""
+                opam_env_cmd = f"{localopam} env --cli=2.3"
+            else:
+                opam_env_cmd = (
+                    f"{localopam} env --cli=2.3 {shell_cmd(opam_root_args)} "
+                    + "--switch=tenjin --set-switch --set-root"
+                )
             return f"eval $({opam_env_cmd}) && {maincmd}"
-        return maincmd
+        else:
+            return maincmd
 
     def mk_env():
         if "env" in kwargs:
