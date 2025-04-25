@@ -127,11 +127,7 @@ def provision_opam_into(localdir: Path):
     say("      (subsequent output comes from `opam switch create`)")
     say("----------------------------------------------------------------")
 
-    with open('hi.c', 'w') as f:
-        f.write("#include <stdio.h>\nint main() { printf(\"hi\"); return 0; }")
-    subprocess.check_call(["gcc", "hi.c", "-o", "hi"])
-    subprocess.check_call(["./hi"], shell=True)
-
+    subprocess.check_call(["date"])
     hermetic.check_call_opam(
         ["switch", "create", "tenjin", ocaml_version, "--no-switch"],
         eval_opam_env=False,
@@ -139,6 +135,7 @@ def provision_opam_into(localdir: Path):
                  "CC": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang"),
                  "CXX": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang++"),},
     )
+    subprocess.check_call(["date"])
 
     opam_version_seen = hermetic.run_opam(
         ["--version"], check=True, capture_output=True
