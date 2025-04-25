@@ -74,7 +74,7 @@ def provision_opam_binary_into(opam_version: str, localdir: Path) -> None:
     if sys_opam is not None:
         sys_opam_version = subprocess.check_output([sys_opam, "--version"]).decode("utf-8")
         if Version(sys_opam_version) >= Version(opam_version):
-            say("Symlinking to a suitable version of opam at", str(sys_opam))
+            say(f"Symlinking to a suitable version of opam at {sys_opam}")
             os.symlink(sys_opam, str(localdir / "opam"))
             return
 
