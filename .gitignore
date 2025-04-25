@@ -1,5 +1,7 @@
 *~
 .*.swo
 .*.swp
-_local
 __pycache__
+
+/_opam/
+/_local/
