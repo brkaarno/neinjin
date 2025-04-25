@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install tools needed by OCaml (to better account for setup time) 
-        run: sudo apt-get --yes install bubblewrap musl-tools rsync 
+        run: sudo apt-get --yes --no-install-recommends install bubblewrap musl-tools rsync 
 
       - uses: ocaml/setup-ocaml@bf20b49633a2fa6e59af045f672c5a901311cb95 # v3.3.0
         with:
