@@ -160,13 +160,18 @@ def provision_cmake_into(localdir: Path, version: str):
 
 
 def provision_10j_llvm_into(localdir: Path):
-    assert Path("LLVM-18.1.8-Linux-x86_64.tar.xz").is_file()
-    extract_tarball(
-        Path("LLVM-18.1.8-Linux-x86_64.tar.xz"),
-        hermetic.xj_llvm_root(localdir),
-        ctx="(llvm) ",
-        time_estimate="a minute",
-    )
+    if Path("LLVM-18.1.8-Linux-x86_64.tar.xz").is_file():
+        extract_tarball(
+            Path("LLVM-18.1.8-Linux-x86_64.tar.xz"),
+            hermetic.xj_llvm_root(localdir),
+            ctx="(llvm) ",
+            time_estimate="a minute",
+        )
+    else:
+        url = "https://images.aarno-labs.com/amp/ben/LLVM-18.1.8-Linux-x86_64.tar.xz"
+        download_and_extract_tarball(
+            url, hermetic.xj_llvm_root(localdir), ctx="(llvm) ", time_estimate="a minute"
+        )
 
     sysroot_name = "sysroot"
     provision_debian_bullseye_sysroot_into(
