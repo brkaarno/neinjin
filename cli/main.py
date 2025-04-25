@@ -205,6 +205,19 @@ def check_repo_file_sizes():
 
 
 @cli.command()
+def opam():
+    "Run opam (with 10j's switch, etc)"
+    pass  # placeholder command
+
+
+# placeholder command
+@cli.command()
+def exec():
+    "Run a command with 10j's PATH etc"
+    pass
+
+
+@cli.command()
 def provision():
     provisioning.provision()
 
@@ -215,8 +228,9 @@ if __name__ == "__main__":
     # One concrete example is `opam exec -- dune --help`. The `--` separator
     # ensures that opam passes the `--help` argument to dune. But Click
     # unconditionally consumes the double-dash, producing unwanted behavior.
-    if len(sys.argv) > 0:
+    if len(sys.argv) > 1:
         if sys.argv[1] == "opam":
             sys.exit(hermetic.run_opam(sys.argv[2:]).returncode)
-    
+        if sys.argv[1] == "exec":
+            sys.exit(hermetic.run_shell_cmd(sys.argv[2:]).returncode)
     cli()

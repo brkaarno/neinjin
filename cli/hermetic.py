@@ -22,6 +22,36 @@ def xj_llvm_root(localdir: Path) -> Path:
     return localdir / "xj-llvm"
 
 
+def run_shell_cmd(
+    cmd: str | list[object], check=False, with_tenjin_deps=True, env_ext=None, **kwargs
+) -> subprocess.CompletedProcess:
+    localdir = repo_root.localdir()
+
+    def mk_env():
+        if "env" in kwargs:
+            env = kwargs["env"]
+            del kwargs["env"]  # we'll pass it explicitly, so not via kwargs
+        else:
+            env = os.environ.copy()
+
+        if env_ext is not None:
+            env = {**env, **env_ext}
+
+        if with_tenjin_deps:
+            env["PATH"] = os.pathsep.join([
+                str(xj_build_deps(localdir) / "bin"),
+                str(xj_llvm_root(localdir) / "bin"),
+                env["PATH"],
+            ])
+
+        return env
+
+    if not isinstance(cmd, str):
+        cmd = " ".join(str(x) for x in cmd)
+
+    return subprocess.run(cmd, check=check, shell=True, env=mk_env(), **kwargs)
+
+
 def opamroot(localdir: Path) -> Path:
     return localdir / "opamroot"
 
@@ -37,7 +67,7 @@ def run_opam(
     localdir = repo_root.localdir()
     localopam = localdir / "opam"
 
-    def mk_shell_cmd():
+    def mk_shell_cmd() -> str:
         def shell_cmd(parts: list[str]) -> str:
             return " ".join(str(x) for x in parts)
 
@@ -65,32 +95,7 @@ def run_opam(
         else:
             return maincmd
 
-    def mk_env():
-        if "env" in kwargs:
-            env = kwargs["env"]
-            del kwargs["env"]  # we'll pass it explicitly, so not via kwargs
-        else:
-            env = os.environ.copy()
-
-        if env_ext is not None:
-            env = {**env, **env_ext}
-
-        if with_tenjin_deps:
-            env["PATH"] = os.pathsep.join([
-                str(xj_build_deps(localdir) / "bin"),
-                str(xj_llvm_root(localdir) / "bin"),
-                env["PATH"],
-            ])
-
-        return env
-
-    return subprocess.run(
-        mk_shell_cmd(),
-        check=check,
-        shell=True,
-        env=mk_env(),
-        **kwargs,
-    )
+    return run_shell_cmd(mk_shell_cmd(), check, with_tenjin_deps, env_ext, **kwargs)
 
 
 def check_call_opam(
