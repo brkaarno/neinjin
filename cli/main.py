@@ -209,11 +209,14 @@ def provision():
     provisioning.provision()
 
 
-@cli.command(context_settings={"ignore_unknown_options": True})
-@click.argument("args", nargs=-1)
-def opam(args: tuple[str, ...]):
-    hermetic.check_call_opam(args)
-
-
 if __name__ == "__main__":
+    # Per its own documentation, Click does not support losslessly forwarding
+    # command line arguments. So when we want to do that, we bypass Click.
+    # One concrete example is `opam exec -- dune --help`. The `--` separator
+    # ensures that opam passes the `--help` argument to dune. But Click
+    # unconditionally consumes the double-dash, producing unwanted behavior.
+    if len(sys.argv) > 0:
+        if sys.argv[1] == "opam":
+            sys.exit(hermetic.run_opam(sys.argv[2:]).returncode)
+    
     cli()
