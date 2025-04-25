@@ -13,16 +13,7 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v4
 
-      - name: Install tools needed by OCaml (to better account for setup time) 
-        run: |
-          # Man pages are IO intensive and not needed in CI!
-          # See https://stackoverflow.com/a/79289673/169305
-          echo 'set man-db/auto-update false' | sudo debconf-communicate
-          sudo dpkg-reconfigure man-db
-
-          sudo apt-get --yes --no-install-recommends install bubblewrap musl-tools rsync 
-
-      - uses: ocaml/setup-ocaml@bf20b49633a2fa6e59af045f672c5a901311cb95 # v3.3.0
+      - uses: brk/setup-ocaml-unsandboxed@89ccd7e026e5aa5244af063742f11cf633a6c0e1 # v3.3.0
         with:
           ocaml-compiler: 5
           # Allow CI's version of OCaml to float, even if the usual provisioning
