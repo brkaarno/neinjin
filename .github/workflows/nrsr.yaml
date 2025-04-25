@@ -13,8 +13,14 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v4
 
-      - name: Provision uv
-        run: sh cli/_provision.sh
+      - uses: brk/setup-ocaml-unsandboxed@89ccd7e026e5aa5244af063742f11cf633a6c0e1 # v3.3.0
+        with:
+          ocaml-compiler: 5
+          # Allow the chosen version of OCaml to float, even if the usual provisioning
+          # process would pin it.
+
+      - name: Provision dependencies
+        run: sh cli/sh/provision.sh
 
       - name: Health check
         run: cli/10j status
