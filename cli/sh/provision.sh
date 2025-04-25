@@ -8,6 +8,10 @@ set -eu
 err () { echo "ERROR: $1" >&2; }
 die () { err "$1"; exit 1; }
 
+sez () {
+  echo "TENJIN SEZ: $1"
+}
+
 check_cmd () {
   command -v "$1" >/dev/null 2>&1
   return $?
@@ -28,14 +32,19 @@ download () {
 
 REPOROOT=$(realpath .)
 
-echo REPOROOT is $REPOROOT
 [ -f $REPOROOT/cli/sh/provision.sh ] || die "please run this script from Tenjin's root directory";
 
 LOCALDIR=$REPOROOT/_local
 
 mkdir -p "$LOCALDIR"
 
-echo "Downloading and installing uv to $LOCALDIR"
+sez "First we'll grab 'uv' to run Python,"
+sez "  then we'll use it to run the rest of the"
+sez "  provisioning steps."
+echo ""
+sez "Everything will be installed to _local/"
+echo ""
+sez "Downloading and installing uv to $LOCALDIR"
 download "https://astral.sh/uv/install.sh" "$LOCALDIR/uv-installer.sh"
 env UV_UNMANAGED_INSTALL="$LOCALDIR" INSTALLER_PRINT_QUIET=1 \
                       sh "$LOCALDIR"/uv-installer.sh
