@@ -16,7 +16,7 @@ jobs:
       - uses: brk/setup-ocaml-unsandboxed@89ccd7e026e5aa5244af063742f11cf633a6c0e1 # v3.3.0
         with:
           ocaml-compiler: 5
-          # Allow CI's version of OCaml to float, even if the usual provisioning
+          # Allow the chosen version of OCaml to float, even if the usual provisioning
           # process would pin it.
 
       - name: Provision dependencies
