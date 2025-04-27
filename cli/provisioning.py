@@ -6,6 +6,7 @@ import urllib.request
 import tarfile
 import shutil
 import subprocess
+from typing import Callable
 
 from packaging.version import Version
 import click
@@ -88,12 +89,85 @@ def provision_opam_binary_into(opam_version: str, localdir: Path) -> None:
     tagged.replace(localdir / "opam")
 
 
+def install_ocaml(localdir: Path, say: Callable[[str], None]):
+    ocaml_version = "5.2.0"
+
+    opamroot = localdir / "opamroot"
+    if opamroot.is_dir():
+        shutil.rmtree(opamroot)
+
+    # Bubblewrap does not work inside Docker containers, at least not without
+    # heinous workarounds, if we're in Docker then we don't really need it anyway.
+    # So we'll try running a trivial command with it; if it fails, we'll tell opam
+    # not to use it.
+    try:
+        sandboxing_arg = []
+        subprocess.check_call([
+            hermetic.xj_build_deps(localdir) / "bin" / "bwrap",
+            "--",
+            "true",
+        ])
+    except subprocess.CalledProcessError:
+        say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
+        sandboxing_arg = ["--disable-sandboxing"]
+
+    say("================================================================")
+    say("Initializing opam; this will take about half a minute...")
+    say("      (subsequent output comes from `opam init --bare`)")
+    say("----------------------------------------------------------------")
+    say("")
+    hermetic.check_call_opam(
+        ["init", "--bare", "--no-setup", "--disable-completion", *sandboxing_arg],
+        eval_opam_env=False,
+    )
+
+    say("")
+    say("================================================================")
+    say("Installing OCaml; this will take four-ish minutes to compile...")
+    say("      (subsequent output comes from `opam switch create`)")
+    say("----------------------------------------------------------------")
+
+    subprocess.check_call(["date"])
+    hermetic.check_call_opam(
+        ["switch", "create", "tenjin", ocaml_version, "--no-switch"],
+        eval_opam_env=False,
+        env_ext={
+            "OPAMNOENVNOTICE": "1",
+            "CC": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang"),
+            "CXX": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang++"),
+        },
+    )
+    subprocess.check_call(["date"])
+
+
+def provision_dune():
+    dune_version = "3.18.1"
+
+    def say(msg: str):
+        sez(msg, ctx="(opam) ")
+
+    cp = hermetic.run_opam(["exec", "--", "dune", "--version"], check=False, capture_output=True)
+    if cp.returncode == 0:
+        actual_version = Version(cp.stdout.decode("utf-8"))
+        if actual_version >= Version(dune_version):
+            say("Dune is already installed.")
+            return
+
+        say(f"Found dune version {actual_version}, but we need {dune_version}.")
+
+    say("")
+    say("================================================================")
+    say("Installing Dune; this will take a minute to compile...")
+    say("      (subsequent output comes from `opam install dune`)")
+    say("----------------------------------------------------------------")
+    hermetic.check_call_opam(["install", f"dune.{dune_version}"])
+
+
 def provision_opam_into(localdir: Path):
     def say(msg: str):
         sez(msg, ctx="(opam) ")
 
     opam_version = "2.3.0"
-    ocaml_version = "5.3.0"
 
     provision_opam_binary_into(opam_version, localdir)
 
@@ -102,57 +176,14 @@ def provision_opam_into(localdir: Path):
         say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
         say("----------------------------------------------------------------")
     else:
-        opamroot = localdir / "opamroot"
-        if opamroot.is_dir():
-            shutil.rmtree(opamroot)
-
-        # Bubblewrap does not work inside Docker containers, at least not without
-        # heinous workarounds, if we're in Docker then we don't really need it anyway.
-        # So we'll try running a trivial command with it; if it fails, we'll tell opam
-        # not to use it.
-        try:
-            sandboxing_arg = []
-            subprocess.check_call([
-                hermetic.xj_build_deps(localdir) / "bin" / "bwrap",
-                "--",
-                "true",
-            ])
-        except subprocess.CalledProcessError:
-            say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
-            sandboxing_arg = ["--disable-sandboxing"]
-
-        say("================================================================")
-        say("Initializing opam; this will take about half a minute...")
-        say("      (subsequent output comes from `opam init --bare`)")
-        say("----------------------------------------------------------------")
-        say("")
-        hermetic.check_call_opam(
-            ["init", "--bare", "--no-setup", "--disable-completion", *sandboxing_arg],
-            eval_opam_env=False,
-        )
-
-        say("")
-        say("================================================================")
-        say("Installing OCaml; this will take a few minutes to compile...")
-        say("      (subsequent output comes from `opam switch create`)")
-        say("----------------------------------------------------------------")
-
-        subprocess.check_call(["date"])
-        hermetic.check_call_opam(
-            ["switch", "create", "tenjin", ocaml_version, "--no-switch"],
-            eval_opam_env=False,
-            env_ext={
-                "OPAMNOENVNOTICE": "1",
-                "CC": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang"),
-                "CXX": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang++"),
-            },
-        )
-        subprocess.check_call(["date"])
+        install_ocaml(localdir, say)
 
     opam_version_seen = hermetic.run_opam(
         ["--version"], check=True, capture_output=True
     ).stdout.decode("utf-8")
     say(f"opam version: {opam_version_seen}")
+
+    provision_dune()
 
 
 def provision_cmake_into(localdir: Path, version: str):
@@ -181,7 +212,7 @@ def provision_10j_llvm_into(localdir: Path):
             Path("LLVM-18.1.8-Linux-x86_64.tar.xz"),
             hermetic.xj_llvm_root(localdir),
             ctx="(llvm) ",
-            time_estimate="a minute",
+            time_estimate="twenty seconds or so",
         )
     else:
         url = "https://images.aarno-labs.com/amp/ben/LLVM-18.1.8-Linux-x86_64.tar.xz"
@@ -224,6 +255,88 @@ def provision_10j_deps_into(localdir: Path):
     )
 
 
+#                COMMENTARY(pkg-config-paths)
+# pkg-config embeds various configured paths into the binary.
+# In particular, it embeds, via compiler flags during compilation,
+# LIBDIR (via --prefix), PKG_CONFIG_PC_PATH, PKG_CONFIG_SYSTEM_INCLUDE_PATH,
+# and PKG_CONFIG_SYSTEM_LIBRARY_PATH.
+#
+# So what we do, and ugh this leaves me feeling a little queasy, hurk, is...
+# we embed very large fake paths into the pkg-config binary, and we call that
+# binary "uncooked". Then we make a copy of the binary, and make in-place edits
+# to have the embedded paths match those on the user's system. (The fake paths
+# are large enough that they should accommodate whatever path the user has.)
+def cook_pkg_config_within(localdir: Path):
+    def say(msg: str):
+        sez(msg, ctx="(pkg-config) ")
+
+    fifty = b"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    rilly = b"thisverylongpathistogiveusroomtooverwriteitlaterok"
+    twohundredfifty = fifty + fifty + fifty + fifty + rilly
+    path_of_unusual_size = b"/tmp/" + twohundredfifty + b"/" + twohundredfifty
+    libdir = path_of_unusual_size + b"/prefix/lib"
+    sysinc = path_of_unusual_size + b"/sysinc:/usr/include"
+    syslib = path_of_unusual_size + b"/syslib:/usr/lib:/lib"
+    pcpath = path_of_unusual_size + b"/lib/pkgconfig:" + path_of_unusual_size + b"/share/pkgconfig"
+    nullbyte = b"\0"
+
+    bindir = hermetic.xj_build_deps(localdir) / "bin"
+
+    uncooked = bindir / "pkg-config.uncooked"
+    assert uncooked.is_file()
+    cooked = bindir / "pkg-config"
+    shutil.copy(uncooked, cooked)
+
+    def replace_null_terminated_needle_in(haystack: bytes, needle: bytes, newstuff: bytes) -> bytes:
+        # Make sure is has the embedded path/data we are expecting it to have.
+        assert (needle + nullbyte) in haystack
+
+        assert len(newstuff) <= len(needle)
+        if len(newstuff) < len(needle):
+            # Pad the newstuff with null bytes to match the length of needle.
+            newstuff += b"\0" * (len(needle) - len(newstuff))
+
+        assert len(newstuff) == len(needle)
+        return haystack.replace(needle, newstuff)
+
+    say("Cooking pkg-config...")
+    with open(cooked, "r+b") as f:
+        # Read the file into memory
+        data = f.read()
+
+        sysroot_usr = hermetic.xj_llvm_root(localdir) / "sysroot" / "usr"
+        newpcpath_lib = sysroot_usr / "lib" / "pkgconfig"
+        newpcpath_shr = sysroot_usr / "share" / "pkgconfig"
+
+        # Replace the placeholder strings with the actual paths.
+        # Note that we set up the paths to include pkg-config's standard paths as backups,
+        # in case the user is trying to compile against a library that isn't in the sysroot.
+        data = replace_null_terminated_needle_in(
+            data,
+            sysinc,
+            bytes(sysroot_usr / "include") + b":/usr/include",
+        )
+        data = replace_null_terminated_needle_in(
+            data,
+            syslib,
+            bytes(sysroot_usr / "lib") + b":/usr/lib:/lib",
+        )
+        data = replace_null_terminated_needle_in(
+            data, pcpath, bytes(newpcpath_lib) + b":" + bytes(newpcpath_shr) + b":/usr/lib:/lib"
+        )
+        data = replace_null_terminated_needle_in(
+            data, libdir, bytes(hermetic.xj_build_deps(localdir) / "lib")
+        )
+
+        # Write the modified data back to the file
+        f.seek(0)
+        f.write(data)
+        f.truncate()
+    say("... done cooking pkg-config.")
+
+    assert not (path_of_unusual_size in data), "Oops, pkg-config was left undercooked!"
+
+
 def provision():
     def say(msg: str):
         sez(msg, ctx="(overall-provisioning) ")
@@ -237,6 +350,7 @@ def provision():
 
     provision_10j_deps_into(localdir)
     provision_10j_llvm_into(localdir)
+    cook_pkg_config_within(localdir)
     provision_cmake_into(localdir, version="3.31.7")
     provision_opam_into(localdir)
 

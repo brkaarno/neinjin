@@ -222,6 +222,11 @@ def provision():
     provisioning.provision()
 
 
+@cli.command()
+def pdune():
+    provisioning.provision_dune()
+
+
 if __name__ == "__main__":
     # Per its own documentation, Click does not support losslessly forwarding
     # command line arguments. So when we want to do that, we bypass Click.
