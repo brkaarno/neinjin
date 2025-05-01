@@ -290,7 +290,7 @@ fn int_arg_metaitem(name: &str, arg: u128) -> NestedMeta {
         path: mk().path(name),
         paren_token: Default::default(),
         nested: FromIterator::from_iter(
-            vec![mk().nested_meta_item(NestedMeta::Lit(lit))].into_iter(),
+            vec![mk().nested_meta_item(NestedMeta::Lit(lit))],
         ),
     });
     NestedMeta::Meta(inner)
@@ -449,8 +449,7 @@ fn clean_path(mod_names: &RefCell<IndexMap<String, PathBuf>>, path: Option<&path
             .unwrap()
             .to_str()
             .unwrap()
-            .replace('.', "_")
-            .replace('-', "_")
+            .replace(['.', '-'], "_")
     }
 
     let mut file_path: String = path.map_or("internal".to_string(), path_to_str);
@@ -1263,7 +1262,7 @@ impl<'c> Translation<'c> {
         let mut item_stores = self.items.borrow_mut();
         let item_store = item_stores
             .entry(Self::cur_file(self))
-            .or_insert_with(ItemStore::new);
+            .or_default();
         f(item_store)
     }
 
@@ -3347,7 +3346,7 @@ impl<'c> Translation<'c> {
                 // need to cast it to fn() to ensure that it has a real address.
                 let mut set_unsafe = false;
                 if ctx.needs_address() {
-                    if let &CDeclKind::Function { ref parameters, .. } = decl {
+                    if let CDeclKind::Function { parameters, .. } = decl {
                         let ty = self.convert_type(qual_ty.ctype)?;
                         let actual_ty = self
                             .type_converter
@@ -4819,7 +4818,7 @@ impl<'c> Translation<'c> {
             let mut item_stores = self.items.borrow_mut();
             let items = item_stores
                 .entry(decl_file_id.unwrap())
-                .or_insert(ItemStore::new());
+                .or_default();
 
             items.add_item(item);
         } else {
@@ -4840,7 +4839,7 @@ impl<'c> Translation<'c> {
             let mut items = self.items.borrow_mut();
             let mod_block_items = items
                 .entry(decl_file_id.unwrap())
-                .or_insert(ItemStore::new());
+                .or_default();
 
             mod_block_items.add_foreign_item(item);
         } else {
@@ -4877,7 +4876,7 @@ impl<'c> Translation<'c> {
         self.items
             .borrow_mut()
             .entry(decl_file_id)
-            .or_insert(ItemStore::new())
+            .or_default()
             .add_use(module_path, ident_name);
     }
 

@@ -134,7 +134,7 @@ fn parse_constraints(
     }
 
     // Handle register names
-    let mut constraints = constraints.replace('{', "\"").replace('}', "\"");
+    let mut constraints = constraints.replace(['{', '}'], "\"");
 
     // Convert (simple) constraints to ones rustc understands
     match &*constraints {
@@ -675,8 +675,8 @@ impl<'c> Translation<'c> {
         let mut tied_operands = HashMap::new();
         for (
             input_idx,
-            &AsmOperand {
-                ref constraints, ..
+            AsmOperand {
+                constraints, ..
             },
         ) in inputs.iter().enumerate()
         {
@@ -1010,7 +1010,7 @@ impl<'c> Translation<'c> {
         stmts.push(mac);
 
         // Push the post-macro statements
-        stmts.extend(post_stmts.into_iter());
+        stmts.extend(post_stmts);
 
         Ok(stmts)
     }
