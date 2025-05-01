@@ -314,7 +314,7 @@ def provision_ocaml(ocaml_version: str):
                 "CXX": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang++"),
             },
         )
-        
+
     if hermetic.opam_non_hermetic():
         say("================================================================")
         say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
