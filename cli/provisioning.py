@@ -17,6 +17,7 @@ import click
 import repo_root
 import hermetic
 from sha256sum import compute_sha256
+from constants import WANT
 
 
 class InstallationState(enum.Enum):
@@ -28,18 +29,6 @@ class InstallationState(enum.Enum):
 class CheckDepBy(enum.Enum):
     VERSION = 0
     SHA256 = 1
-
-
-# Note: the keys in this dict are not command names, or file names,
-# just arbitrary names for the things we are tracking.
-WANT = {
-    "10j-llvm": "18.1.8",
-    "10j-opam": "2.3.0",
-    "10j-dune": "3.18.0",
-    "10j-ocaml": "5.2.0",
-    "10j-cmake": "3.31.7",
-    "10j-build-deps_Linux-x86_64": "dda1346ffbb6835aeb2e29bd0acf5b1a4d81c4b9eb011a669a61436f1e75a3ee",
-}
 
 
 class TrackingWhatWeHave:
@@ -130,7 +119,7 @@ def provision_desires():
     want_10j_deps()
     want_10j_llvm()
     want_cmake()
-    want_dune()
+    # want_dune()
 
 
 def require_rust_stuff():
@@ -255,12 +244,50 @@ def want_10j_deps():
     HAVE.note_we_have(key, sha256hex=WANT[key])
 
 
+# Prerequisite: opam provisioned.
+def grab_opam_version_str() -> str:
+    cp = hermetic.run_opam(["--version"], check=True, capture_output=True)
+    return cp.stdout.decode("utf-8")
+
+
+# Prerequisite: opam and ocaml provisioned.
+def grab_ocaml_version_str() -> str:
+    cp = hermetic.run_opam(["exec", "--", "ocamlc", "--version"], check=True, capture_output=True)
+    return cp.stdout.decode("utf-8")
+
+
+# Prerequisite: opam and dune provisioned.
+def grab_dune_version_str() -> str:
+    cp = hermetic.run_opam(["exec", "--", "dune", "--version"], check=True, capture_output=True)
+    return cp.stdout.decode("utf-8")
+
+
 def provision_ocaml_into(_localdir: Path, version: str):
     provision_ocaml(version)
 
-    cp = hermetic.run_opam(["exec", "--", "ocamlc", "--version"], check=True, capture_output=True)
-    actual_version = Version(cp.stdout.decode("utf-8"))
-    HAVE.note_we_have("10j-ocaml", version=actual_version)
+    click.echo("opam env (no eval env):")
+    hermetic.run_opam(
+        [
+            "env",
+        ],
+        eval_opam_env=False,
+        check=False,
+    )
+    hermetic.run_opam(["config", "report"], eval_opam_env=False, check=False)
+    click.echo("opam env (w/ eval env):")
+    hermetic.run_opam(
+        [
+            "env",
+        ],
+        eval_opam_env=True,
+        check=False,
+    )
+    hermetic.run_opam(["config", "report"], eval_opam_env=True, check=False)
+    click.echo("opam exec ocaml --version (no env):")
+    hermetic.run_opam(["exec", "--", "ocaml", "--version"], eval_opam_env=False, check=False)
+    click.echo("opam exec ocaml --version (w/ env):")
+    hermetic.run_opam(["exec", "--", "ocaml", "--version"], eval_opam_env=True, check=False)
+    HAVE.note_we_have("10j-ocaml", version=Version(grab_ocaml_version_str()))
 
 
 def provision_ocaml(ocaml_version: str):
@@ -269,10 +296,16 @@ def provision_ocaml(ocaml_version: str):
     def say(msg: str):
         sez(msg, ctx="(ocaml) ")
 
-    def install_ocaml(localdir: Path, ocaml_version: str):
-        opamroot = localdir / "opamroot"
-        if opamroot.is_dir():
-            shutil.rmtree(opamroot)
+    TENJIN_SWITCH = "tenjin"
+
+    def install_ocaml(localdir: Path):
+        if not hermetic.opam_non_hermetic():
+            # For hermetic installations, we will simply bulldoze the existing
+            # opam root and start fresh. For non-hermetic installations, we'll
+            # try to reuse what's already there.
+            opamroot = localdir / "opamroot"
+            if opamroot.is_dir():
+                shutil.rmtree(opamroot)
 
         # Bubblewrap does not work inside Docker containers, at least not without
         # heinous workarounds, if we're in Docker then we don't really need it anyway.
@@ -289,15 +322,32 @@ def provision_ocaml(ocaml_version: str):
             say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
             sandboxing_arg = ["--disable-sandboxing"]
 
-        say("================================================================")
-        say("Initializing opam; this will take about half a minute...")
-        say("      (subsequent output comes from `opam init --bare`)")
-        say("----------------------------------------------------------------")
-        say("")
-        hermetic.check_call_opam(
-            ["init", "--bare", "--no-setup", "--disable-completion", *sandboxing_arg],
-            eval_opam_env=False,
+        cp = hermetic.run_opam(["config", "report"], eval_opam_env=False, capture_output=True)
+        if b"please run `opam init'" in cp.stderr:
+            say("================================================================")
+            say("Initializing opam; this will take about half a minute...")
+            say("      (subsequent output comes from `opam init --bare`)")
+            say("----------------------------------------------------------------")
+            say("")
+            hermetic.check_call_opam(
+                ["init", "--bare", "--no-setup", "--disable-completion", *sandboxing_arg],
+                eval_opam_env=False,
+            )
+
+        cp = hermetic.run_opam(
+            ["switch", "list"], eval_opam_env=False, check=True, capture_output=True
         )
+        if TENJIN_SWITCH in cp.stdout.decode("utf-8"):
+            if grab_ocaml_version_str() == ocaml_version:
+                say("================================================================")
+                say("Reusing cached OCaml, saving a few minutes of compiling...")
+                say("----------------------------------------------------------------")
+                return
+            else:
+                say("================================================================")
+                say("Removing cached OCaml switch due to version mismatch...")
+                say("----------------------------------------------------------------")
+                hermetic.check_call_opam(["switch", "remove", TENJIN_SWITCH], eval_opam_env=False)
 
         say("")
         say("================================================================")
@@ -306,7 +356,7 @@ def provision_ocaml(ocaml_version: str):
         say("----------------------------------------------------------------")
 
         hermetic.check_call_opam(
-            ["switch", "create", "tenjin", ocaml_version, "--no-switch"],
+            ["switch", "create", TENJIN_SWITCH, ocaml_version, "--no-switch"],
             eval_opam_env=False,
             env_ext={
                 "OPAMNOENVNOTICE": "1",
@@ -315,12 +365,7 @@ def provision_ocaml(ocaml_version: str):
             },
         )
 
-    if hermetic.opam_non_hermetic():
-        say("================================================================")
-        say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
-        say("----------------------------------------------------------------")
-    else:
-        install_ocaml(HAVE.localdir, WANT["10j-ocaml"])
+    install_ocaml(HAVE.localdir)
 
 
 def provision_debian_bullseye_sysroot_into(target_arch: str, dest_sysroot: Path):
@@ -383,12 +428,25 @@ def provision_opam_binary_into(opam_version: str, localdir: Path) -> None:
     subprocess.check_call(["chmod", "+x", tagged])
     tagged.replace(localdir / "opam")
 
+    if hermetic.running_in_ci():
+        dotlocalbin = Path.home() / ".local" / "bin"
+        if str(dotlocalbin) in os.environ["PATH"]:
+            if not dotlocalbin.is_dir():
+                dotlocalbin.mkdir(parents=True)
+
+            # XREF:ci-opam-paths
+            # We are in CI, but didn't have opam on the path already.
+            # Install it where (A) nrsr.yaml will cache it and (B) it'll be on PATH.
+            # Then our next CI run will be faster.
+            shutil.copy(Path(localdir, "opam"), dotlocalbin / "opam")
+        else:
+            click.echo("WARNING: ~/.local/bin not on PATH anymore?!? OCaml cache won't work.")
+
 
 def provision_dune_into(_localdir: Path, version: str):
     provision_dune(version)
-    cp = hermetic.run_opam(["exec", "--", "dune", "--version"], check=True, capture_output=True)
-    seen_dune_version = cp.stdout.decode("utf-8")
-    HAVE.note_we_have("10j-dune", version=Version(seen_dune_version))
+
+    HAVE.note_we_have("10j-dune", version=Version(grab_dune_version_str()))
 
 
 # Precondition: not installed, or version too old.
@@ -424,9 +482,7 @@ def provision_opam_into(localdir: Path, version: str):
 
     provision_opam_binary_into(version, localdir)
 
-    opam_version_seen = hermetic.run_opam(
-        ["--version"], check=True, capture_output=True
-    ).stdout.decode("utf-8")
+    opam_version_seen = grab_opam_version_str()
     say(f"opam version: {opam_version_seen}")
     HAVE.note_we_have("10j-opam", version=Version(opam_version_seen))
 
@@ -481,6 +537,9 @@ def provision_10j_llvm_into(localdir: Path, version: str):
             f.write(
                 textwrap.dedent(f"""\
                     --sysroot <CFGDIR>/../{sysroot_name}
+
+                    # temporarily enable verbose output, to debug ocaml/opam issue
+                    -v
 
                     # This one's unfortunate. LLD defaults to --no-allow-shlib-undefined
                     # but the libgcc_s.so.1 shipped with Ubuntu 22.04 has an undefined

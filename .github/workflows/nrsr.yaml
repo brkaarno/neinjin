@@ -2,9 +2,13 @@ name: not-rocket-science
 
 on:
   push:
-    branches: [ "test/**" ]
+    branches: [ "test/**", "with-c2rust" ]
   pull_request:
     branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
 
 jobs:
   not-rocket-science-checks:
@@ -12,13 +16,28 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v4
+      
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
 
-      - uses: brk/setup-ocaml-unsandboxed@89ccd7e026e5aa5244af063742f11cf633a6c0e1 # v3.3.0
+      - name: Extract OCaml Cache Key
+        id: extract
+        run: echo "ocaml_key=$(python3 cli/constants.py ocaml-cache-key)" >> $GITHUB_OUTPUT
+
+      # We don't use setup-ocaml because it would compile OCaml in the runner's
+      # environment, which has libraries that aren't available to the 10j toolchain.
+      # Thus, when our provisioning process would try to compile dune, it would fail.
+      # This action restores a previous cache, if we have one, and populates the cache
+      # if the workflow succeeds.
+      # XREF:ci-opam-paths
+      - name: Cache OCaml
+        id: cache-ocaml
+        uses: actions/cache@v4
         with:
-          ocaml-compiler: 5
-          # Allow the chosen version of OCaml to float, even if the usual provisioning
-          # process would pin it.
-
+          path: |
+            ~/.opam
+            ~/.local/bin/opam
+          key: ${{ steps.extract.outputs.ocaml_key }}
+          
       - name: Provision dependencies
         run: sh cli/sh/provision.sh
 
@@ -27,6 +46,12 @@ jobs:
 
       - name: Code linting and formatting checks
         run: cli/10j check-star
+
+      - name: Build c2rust
+        run: |
+          export XJ_SHOW_CMDS=1
+          cd c2rust
+          ../cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
 
       - name: Ensure no large files were accidentally added
         run: cli/10j check-repo-file-sizes

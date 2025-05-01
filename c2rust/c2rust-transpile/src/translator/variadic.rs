@@ -22,7 +22,7 @@ macro_rules! match_or {
     };
 }
 
-impl<'c> Translation<'c> {
+impl Translation<'_> {
     /// Returns true iff `va_start`, `va_end`, or `va_copy` may be called on `decl_id`.
     pub fn is_va_decl(&self, decl_id: CDeclId) -> bool {
         let fn_ctx = self.function_context.borrow();
@@ -188,7 +188,7 @@ impl<'c> Translation<'c> {
             if self
                 .ast_context
                 .get_pointee_qual_type(ty.ctype)
-                .map_or(false, |ty| {
+                .is_some_and(|ty| {
                     self.ast_context.is_forward_declared_type(ty.ctype)
                 })
             {

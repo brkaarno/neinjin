@@ -73,7 +73,7 @@ fn assignment_metaitem(lhs: &str, rhs: &str) -> NestedMeta {
     NestedMeta::Meta(meta_item)
 }
 
-impl<'a> Translation<'a> {
+impl Translation<'_> {
     /// This method aggregates bitfield struct field information by way of:
     /// 1. Collecting consecutive bytes of bitfields into a single FieldType::BitfieldGroup
     /// 2. Summing up the number of padding bytes between fields (or at the end of a struct)

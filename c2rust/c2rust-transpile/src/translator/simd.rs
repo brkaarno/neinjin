@@ -84,7 +84,7 @@ fn add_arch_use(store: &mut ItemStore, arch_name: &str, item_name: &str) {
     );
 }
 
-impl<'c> Translation<'c> {
+impl Translation<'_> {
     /// Given the name of a typedef check if its one of the SIMD types.
     /// This function returns `true` when the name of the type is one that
     /// it knows how to implement and no further translation should be done.

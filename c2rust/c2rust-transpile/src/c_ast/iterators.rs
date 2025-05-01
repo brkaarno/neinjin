@@ -359,7 +359,7 @@ impl<'context> DFExpr<'context> {
     }
 }
 
-impl<'context> Iterator for DFExpr<'context> {
+impl Iterator for DFExpr<'_> {
     type Item = SomeId;
     fn next(&mut self) -> Option<Self::Item> {
         let result = self.stack.pop();
@@ -397,7 +397,7 @@ impl<'context> DFNodes<'context> {
     }
 }
 
-impl<'context> Iterator for DFNodes<'context> {
+impl Iterator for DFNodes<'_> {
     type Item = SomeId;
     fn next(&mut self) -> Option<Self::Item> {
         let result = self.stack.pop();

@@ -34,6 +34,7 @@ fn check_clang_version() -> Result<(), String> {
     // invocation that it pulls -isystem from. See Bindings::generate() for the
     // -isystem construction.
     if let Some(clang) = clang_sys::support::Clang::find(None, &[]) {
+        eprintln!("# TENJIN: clang.path in check_clang_version() is: {}", clang.path.clone().display());
         let libclang_version = bindgen::clang_version()
             .parsed
             .ok_or("Could not parse version of libclang in bindgen")?;
@@ -119,6 +120,11 @@ fn build_native(llvm_info: &LLVMInfo) {
     // Find where the (already built) LLVM lib dir is
     let llvm_lib_dir = &llvm_info.lib_dir;
 
+    eprintln!("# TENJIN: llvm_info.lib_dir in build_native() is: {}", llvm_lib_dir);
+    for (key, value) in env::vars() {
+        eprintln!("{}={}", key, value);
+    }
+
     match env::var("C2RUST_AST_EXPORTER_LIB_DIR") {
         Ok(libdir) => {
             println!("cargo:rustc-link-search=native={}", libdir);
@@ -129,12 +135,12 @@ fn build_native(llvm_info: &LLVMInfo) {
                 // Where to find LLVM/Clang CMake files
                 .define(
                     "LLVM_DIR",
-                    &env::var("CMAKE_LLVM_DIR")
+                    env::var("CMAKE_LLVM_DIR")
                         .unwrap_or_else(|_| format!("{}/cmake/llvm", llvm_lib_dir)),
                 )
                 .define(
                     "Clang_DIR",
-                    &env::var("CMAKE_CLANG_DIR")
+                    env::var("CMAKE_CLANG_DIR")
                         .unwrap_or_else(|_| format!("{}/cmake/clang", llvm_lib_dir)),
                 )
                 // What to build
@@ -328,7 +334,7 @@ impl LLVMInfo {
             } else {
                 vec!["--shared-mode"]
             };
-            invoke_command(llvm_config.as_deref(), args).map_or(false, |c| c == "static")
+            invoke_command(llvm_config.as_deref(), args).is_some_and(|c| c == "static")
         };
 
         let link_mode = if link_statically {

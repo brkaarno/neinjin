@@ -5,9 +5,8 @@
 use failure::format_err;
 
 use super::*;
-use std::iter;
 
-impl<'c> Translation<'c> {
+impl Translation<'_> {
     /// Generate an integer literal corresponding to the given type, value, and base.
     pub fn mk_int_lit(
         &self,
@@ -223,8 +222,7 @@ impl<'c> Translation<'c> {
                         })
                         .chain(
                             // Pad out the array literal with default values to the desired size
-                            iter::repeat(self.implicit_default_expr(ty, ctx.is_static))
-                                .take(n - ids.len()),
+                            std::iter::repeat_n(self.implicit_default_expr(ty, ctx.is_static), n - ids.len()),
                         )
                         .collect::<TranslationResult<WithStmts<_>>>()?
                         .map(|vals| mk().array_expr(vals)))

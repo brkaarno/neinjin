@@ -1,4 +1,5 @@
 #![deny(missing_docs)]
+#![allow(clippy::to_string_trait_impl)]
 //! This module provides basic support for converting inline assembly statements.
 
 use crate::diagnostics::TranslationResult;
@@ -629,7 +630,7 @@ fn rewrite_asm<F: Fn(&str) -> bool, M: Fn(usize) -> usize>(
     Ok(out)
 }
 
-impl<'c> Translation<'c> {
+impl Translation<'_> {
     /// Convert an inline-assembly statement into one or more Rust statements.
     /// If inline assembly translation is not enabled this will result in an
     /// error message instead of a conversion. Because the inline assembly syntax

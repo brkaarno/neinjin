@@ -96,6 +96,35 @@ def do_check_py():
     do_check_py_fmt()
 
 
+def do_fmt_rs():
+    root = repo_root.find_repo_root_dir_Path()
+    hermetic.run_shell_cmd(f"cd {root / 'c2rust'} && cargo +stable fmt", check=True)
+
+
+def do_check_rs_fmt():
+    root = repo_root.find_repo_root_dir_Path()
+    hermetic.run_shell_cmd(f"cd {root / 'c2rust'} && cargo +stable fmt -- --check", check=True)
+
+
+def do_check_rs():
+    root = repo_root.find_repo_root_dir_Path()
+    hermetic.run_shell_cmd(
+        f"cd {root / 'c2rust'} && cargo +stable clippy --locked"
+        " -p c2rust -p c2rust-transpile"
+        " -- -Aclippy::needless_lifetimes",
+        check=True,
+    )
+    # do_check_rs_fmt()  # c2rust is not yet fmt-clean, will tackle later
+
+
+def do_test_unit_rs():
+    root = repo_root.find_repo_root_dir_Path()
+    hermetic.run_shell_cmd(
+        f"cd {root / 'c2rust'} && cargo +stable test --locked -p c2rust -p c2rust-transpile",
+        check=True,
+    )
+
+
 def parse_git_name_status_line(bs: bytes) -> tuple[str, bytes]:
     """
     >>> parse_git_name_status_line(b'A       .gitignore')
@@ -182,6 +211,27 @@ def check_py():
 
 
 @cli.command()
+def fmt_rs():
+    do_fmt_rs()
+
+
+@cli.command()
+def check_rs():
+    try:
+        do_check_rs()
+    except subprocess.CalledProcessError:
+        sys.exit(1)
+
+
+@cli.command()
+def test_unit_rs():
+    try:
+        do_test_unit_rs()
+    except subprocess.CalledProcessError:
+        sys.exit(1)
+
+
+@cli.command()
 def check_deps():
     do_check_deps(report=True)
 
@@ -194,6 +244,7 @@ def check_star():
     # and then make each command be a thin wrapper to invoke the fn.
     try:
         do_check_py()
+        do_check_rs()
     except subprocess.CalledProcessError:
         sys.exit(1)
 
@@ -213,6 +264,12 @@ def opam():
 @cli.command()
 def dune():
     "Run dune (with 10j's switch, etc)"
+    pass  # placeholder command
+
+
+@cli.command()
+def cargo():
+    "Alias for `10j exec cargo`"
     pass  # placeholder command
 
 
@@ -240,6 +297,8 @@ if __name__ == "__main__":
             sys.exit(hermetic.run_opam(sys.argv[2:]).returncode)
         if sys.argv[1] == "dune":
             sys.exit(hermetic.run_opam(["exec", "--", "dune", *sys.argv[2:]]).returncode)
+        if sys.argv[1] == "cargo":
+            sys.exit(hermetic.run_shell_cmd(sys.argv[1:]).returncode)
         if sys.argv[1] == "exec":
             sys.exit(hermetic.run_shell_cmd(sys.argv[2:]).returncode)
         if sys.argv[1] == "true":

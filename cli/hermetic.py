@@ -34,6 +34,8 @@ def mk_env_for(localdir: Path, with_tenjin_deps=True, env_ext=None, **kwargs) ->
         env = {**env, **env_ext}
 
     if with_tenjin_deps:
+        # We define LLVM_LIB_DIR for c2rust (unconditionally).
+        env["LLVM_LIB_DIR"] = str(xj_llvm_root(localdir) / "lib")
         env["PATH"] = os.pathsep.join([
             str(xj_build_deps(localdir) / "bin"),
             str(xj_llvm_root(localdir) / "bin"),
@@ -93,6 +95,10 @@ def opamroot(localdir: Path) -> Path:
     return localdir / "opamroot"
 
 
+def running_in_ci() -> bool:
+    return os.environ.get("CI") in ("true", "1")
+
+
 def opam_non_hermetic() -> bool:
     """If we're running in CI and opam is installed, we should use it.
 
@@ -100,8 +106,7 @@ def opam_non_hermetic() -> bool:
     set up to use a version opam that is either known to be compatible,
     or that we want to test the compatibility of.
     """
-    running_in_ci = "GITHUB_WORKSPACE" in os.environ
-    return running_in_ci and shutil.which("opam") is not None
+    return running_in_ci() and shutil.which("opam") is not None
 
 
 def run_opam(
@@ -138,9 +143,7 @@ def run_opam(
 
         if eval_opam_env:
             opam_env_cmd = f"{localopam} env {shell_cmd(opam_subcmd_args)}"
-            # If we're using the system opam, we use the default switch.
-            if hermetic:
-                opam_env_cmd += " --switch=tenjin --set-switch --set-root"
+            opam_env_cmd += " --switch=tenjin --set-switch --set-root"
 
             return f"eval $({opam_env_cmd}) && {maincmd}"
         else:
