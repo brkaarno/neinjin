@@ -210,6 +210,12 @@ def opam():
     pass  # placeholder command
 
 
+@cli.command()
+def dune():
+    "Run dune (with 10j's switch, etc)"
+    pass  # placeholder command
+
+
 # placeholder command
 @cli.command()
 def exec():
@@ -219,23 +225,24 @@ def exec():
 
 @cli.command()
 def provision():
-    provisioning.provision()
-
-
-@cli.command()
-def pdune():
-    provisioning.provision_dune()
+    provisioning.provision_desires()
 
 
 if __name__ == "__main__":
     # Per its own documentation, Click does not support losslessly forwarding
     # command line arguments. So when we want to do that, we bypass Click.
-    # One concrete example is `opam exec -- dune --help`. The `--` separator
-    # ensures that opam passes the `--help` argument to dune. But Click
-    # unconditionally consumes the double-dash, producing unwanted behavior.
+    # This especially matters for commands akin to `opam exec -- dune --help`.
+    # Here, `--` separator ensures that opam passes the `--help` argument to
+    # dune. But Click unconditionally consumes the double-dash, resulting in
+    # the `--help` argument being unhelpfully consumed by opam itself.
     if len(sys.argv) > 1:
         if sys.argv[1] == "opam":
             sys.exit(hermetic.run_opam(sys.argv[2:]).returncode)
+        if sys.argv[1] == "dune":
+            sys.exit(hermetic.run_opam(["exec", "--", "dune", *sys.argv[2:]]).returncode)
         if sys.argv[1] == "exec":
             sys.exit(hermetic.run_shell_cmd(sys.argv[2:]).returncode)
+        if sys.argv[1] == "true":
+            sys.exit(0)
+
     cli()

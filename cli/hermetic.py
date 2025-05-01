@@ -37,6 +37,7 @@ def mk_env_for(localdir: Path, with_tenjin_deps=True, env_ext=None, **kwargs) ->
         env["PATH"] = os.pathsep.join([
             str(xj_build_deps(localdir) / "bin"),
             str(xj_llvm_root(localdir) / "bin"),
+            str(localdir / "cmake" / "bin"),
             env["PATH"],
         ])
 
@@ -47,6 +48,9 @@ def run_command_with_progress(command, stdout_file, stderr_file, shell=False) ->
     """
     Run a command, redirecting stdout/stderr to files, and print dots while waiting.
     """
+    if os.environ.get("XJ_SHOW_CMDS", "0") != "0":
+        click.echo(f": {command}")
+
     with open(stdout_file, "wb") as out_f, open(stderr_file, "wb") as err_f:
         proc = subprocess.Popen(
             command,
@@ -73,8 +77,15 @@ def run_shell_cmd(
     if not isinstance(cmd, str):
         cmd = " ".join(str(x) for x in cmd)
 
+    if os.environ.get("XJ_SHOW_CMDS", "0") != "0":
+        click.echo(f": {cmd}")
+
     return subprocess.run(
-        cmd, check=check, shell=True, env=mk_env_for(repo_root.localdir()), **kwargs
+        cmd,
+        check=check,
+        shell=True,
+        env=mk_env_for(repo_root.localdir(), with_tenjin_deps, env_ext),
+        **kwargs,
     )
 
 
@@ -83,6 +94,12 @@ def opamroot(localdir: Path) -> Path:
 
 
 def opam_non_hermetic() -> bool:
+    """If we're running in CI and opam is installed, we should use it.
+
+    Note that we don't do any version checks; we're assuming that CI is
+    set up to use a version opam that is either known to be compatible,
+    or that we want to test the compatibility of.
+    """
     running_in_ci = "GITHUB_WORKSPACE" in os.environ
     return running_in_ci and shutil.which("opam") is not None
 
@@ -128,6 +145,21 @@ def run_opam(
             return f"eval $({opam_env_cmd}) && {maincmd}"
         else:
             return maincmd
+
+    # Opam's warnings about running as root aren't particularly actionable.
+    if not env_ext:
+        env_ext = {}
+    if "OPAMROOTISOK" not in env_ext:
+        env_ext["OPAMROOTISOK"] = "1"
+
+    # See COMMENTARY(goblint-cil-gcc-wrapper)
+    path_elts = [str(xj_llvm_root(localdir) / "goblint-sadness")]
+    # If PATH is in env_ext, it is assumed to be a full PATH, not a delta.
+    if "PATH" in env_ext:
+        path_elts.append(env_ext["PATH"])
+    else:
+        path_elts.append(os.environ["PATH"])
+    env_ext["PATH"] = os.pathsep.join(path_elts)
 
     return run_shell_cmd(mk_shell_cmd(), check, with_tenjin_deps, env_ext, **kwargs)
 

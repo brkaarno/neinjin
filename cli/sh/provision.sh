@@ -36,30 +36,40 @@ REPOROOT=$(realpath .)
 
 LOCALDIR=$REPOROOT/_local
 
-mkdir -p "$LOCALDIR"
+if [ ! -f "$LOCALDIR/uv" ]
+then
+  sez "First we'll grab 'uv' to run Python,"
+  sez "  then we'll use it to run the rest of the"
+  sez "  provisioning steps."
+  echo ""
+  sez "Everything will be installed to _local/"
+  echo ""
+  sez "Downloading and installing uv to $LOCALDIR"
 
-sez "First we'll grab 'uv' to run Python,"
-sez "  then we'll use it to run the rest of the"
-sez "  provisioning steps."
-echo ""
-sez "Everything will be installed to _local/"
-echo ""
-sez "Downloading and installing uv to $LOCALDIR"
-download "https://astral.sh/uv/install.sh" "$LOCALDIR/uv-installer.sh"
-env UV_UNMANAGED_INSTALL="$LOCALDIR" INSTALLER_PRINT_QUIET=1 \
-                      sh "$LOCALDIR"/uv-installer.sh
+  mkdir -p "$LOCALDIR"
+  download "https://astral.sh/uv/install.sh" "$LOCALDIR/uv-installer.sh"
+  env UV_UNMANAGED_INSTALL="$LOCALDIR" INSTALLER_PRINT_QUIET=1 \
+                        sh "$LOCALDIR"/uv-installer.sh
 
-# Write out an initial configuration file
-cat > "$LOCALDIR/uv.toml" <<EOF
-# See also https://docs.astral.sh/uv/configuration/files/
-package = false
-# Ensure that Tenjin's uv cache directory is kept separated
-cache-dir = "$LOCALDIR/uv_cache"
+  # Write out an initial configuration file
+  cat > "$LOCALDIR/uv.toml" <<EOF
+  # See also https://docs.astral.sh/uv/configuration/files/
+  package = false
+  # Ensure that Tenjin's uv cache directory is kept separated
+  cache-dir = "$LOCALDIR/uv_cache"
 EOF
 
-"$LOCALDIR/uv" --version
+  "$LOCALDIR/uv" --version
+fi
 
 # Now that we can reliably run Python,
 # continue provisioning steps in a nicer language than shell.
 $REPOROOT/cli/10j provision
 
+sez "Looks like everything is provisioned."
+if ! command -v 10j >/dev/null 2>&1
+then
+  sez "Last thing, adding  $REPOROOT/cli  to your PATH"
+  sez "             will let you run 10j from anywhere."
+fi
+sez "Cheers!"

@@ -1,12 +1,15 @@
 from pathlib import Path
 import platform
 import os
-from urllib.parse import urlparse
-import urllib.request
 import tarfile
 import shutil
 import subprocess
+from urllib.parse import urlparse
 from typing import Callable
+import json
+import enum
+import sys
+import textwrap
 
 from packaging.version import Version
 import click
@@ -14,6 +17,81 @@ import click
 import repo_root
 import hermetic
 from sha256sum import compute_sha256
+
+
+class InstallationState(enum.Enum):
+    NOT_INSTALLED = 0
+    VERSION_OK = 1
+    VERSION_TOO_OLD = 2
+
+
+class CheckDepBy(enum.Enum):
+    VERSION = 0
+    SHA256 = 1
+
+
+# Note: the keys in this dict are not command names, or file names,
+# just arbitrary names for the things we are tracking.
+WANT = {
+    "10j-llvm": "18.1.8",
+    "10j-opam": "2.3.0",
+    "10j-dune": "3.18.0",
+    "10j-ocaml": "5.2.0",
+    "10j-cmake": "3.31.7",
+    "10j-build-deps_Linux-x86_64": "dda1346ffbb6835aeb2e29bd0acf5b1a4d81c4b9eb011a669a61436f1e75a3ee",
+}
+
+
+class TrackingWhatWeHave:
+    def __init__(self):
+        self.localdir = repo_root.localdir()
+        try:
+            with open(Path(self.localdir, "config.10j-HAVE.json"), "r", encoding="utf-8") as f:
+                self._have = json.load(f)
+        except OSError:
+            self._have = {}
+
+    def save(self):
+        with open(Path(self.localdir, "config.10j-HAVE.json"), "w", encoding="utf-8") as f:
+            json.dump(self._have, f, indent=2, sort_keys=True)
+
+    def note_we_have(self, name: str, version: Version | None = None, sha256hex: str | None = None):
+        match [version is None, sha256hex is None]:
+            case [True, True]:
+                raise ValueError(f"For '{name}' must provide either version or sha256hex")
+            case [False, False]:
+                raise ValueError(f"For '{name}' must provide either version or sha256hex, not both")
+            case _:
+                pass
+
+        had = self._have.get(name)
+        now = str(version) if version else sha256hex
+        self._have[name] = now
+        if had != now:
+            self.save()
+
+    def query(self, name: str) -> str | None:
+        return self._have.get(name)
+
+    def compatible(self, name: str, by: CheckDepBy) -> InstallationState:
+        assert name in WANT
+        wanted_spec: str = WANT[name]
+
+        if name not in self._have:
+            return InstallationState.NOT_INSTALLED
+
+        match by:
+            case CheckDepBy.VERSION:
+                if Version(self._have[name]) >= Version(wanted_spec):
+                    return InstallationState.VERSION_OK
+            case CheckDepBy.SHA256:
+                if self._have[name] == wanted_spec:
+                    return InstallationState.VERSION_OK
+
+        return InstallationState.VERSION_TOO_OLD
+
+
+HAVE = TrackingWhatWeHave()
 
 
 class ProvisioningError(Exception):
@@ -24,8 +102,225 @@ def sez(msg: str, ctx: str, err=False):
     click.echo("TENJIN SEZ: " + ctx + msg, err=err)
 
 
+def download(url: str, filename: Path) -> None:
+    # This import is relatively expensive (20 ms) and is rarely needed,
+    # so it is imported here to avoid slowing down the common case.
+    from urllib.request import urlretrieve  # noqa: PLC0415
+
+    urlretrieve(url, filename)
+
+
 # platform.system() in ["Linux", "Darwin"]
 # platform.machine() in ["x86_64", "arm64"]
+
+
+def provision_desires():
+    require_rust_stuff()
+
+    if HAVE.query("10j-dune") is None:
+
+        def say(msg: str):
+            sez(msg, ctx="(overall-provisioning) ")
+
+        say(f"Provisioning local directory {HAVE.localdir}...")
+        say("This involves downloading and extracting a few hundred megs of tarballs:")
+        say("    Clang+LLVM, a sysroot, and misc build tools like CMake.")
+        say("We'll also install Rust and OCaml, which will take a few minutes...")
+
+    want_10j_deps()
+    want_10j_llvm()
+    want_cmake()
+    want_dune()
+
+
+def require_rust_stuff():
+    def say(msg: str):
+        sez(msg, ctx="(rust) ")
+
+    # We don't run the installer ourselves because rustup pretty much requires
+    # PATH modifications, and it's not our place to do that. In theory we could
+    # have a hermetic copy of rustup + cargo etc but it seems silly because (A)
+    # rustup is already hermetic enough, and (B) if someone is using Tenjin to
+    # translate C to Rust, why on earth would they avoid having Rust installed?
+    # Also one of TRACTOR's requirements is that translated Rust code works with
+    # stable Rust, so pinning to a specific version of Rust would only result in
+    # us not learning about bugs we really need to fix.
+    #
+    # HOWEVER: note that on a machine where only Tenjin's C compiler is available,
+    # any cargo command that leads to compilation (cargo build, for many projects,
+    # and also things like `rustup +nightly component add miri`, always) must be
+    # run via 10j.
+    def complain_about_tool_then_die(tool: str):
+        say(f"{tool} is not installed, or is not available on your $PATH")
+        match platform.system():
+            case "Linux":
+                say("Please install Rust using rustup (or via your package manager).")
+            case "Darwin":
+                say("Please install Rust using rustup (or via Homebrew).")
+            case sysname:
+                say(f"Tenjin doesn't yet support {sysname}, sorry!")
+                sys.exit(1)
+
+        download("https://sh.rustup.rs", "rustup-installer.sh")
+        subprocess.check_call(["chmod", "+x", "rustup-installer.sh"])
+
+        say("")
+        say("For your convenience, I've downloaded the rustup installer script,")
+        say("so you can just run")
+        say("                  ./rustup-installer.sh")
+        say("")
+        say("It will interactively prompt you for the details of how and where")
+        say("to install Rust. Most people choose the default options.")
+        say("")
+        say("Once you can run `cargo --version`,")
+        say("   please re-run `10j provision`")
+        sys.exit(1)
+
+    if shutil.which("rustc") is None:
+        complain_about_tool_then_die("Rust")
+    if shutil.which("cargo") is None:
+        complain_about_tool_then_die("cargo")
+    if shutil.which("rustup") is None:
+        complain_about_tool_then_die("rustup")
+
+
+def want_generic(
+    keyname: str,
+    lowername: str,
+    titlename: str,
+    by: CheckDepBy,
+    provisioner: Callable[[Path, str], None],
+):
+    match HAVE.compatible(keyname, by):
+        case InstallationState.VERSION_OK:
+            return
+        case InstallationState.VERSION_TOO_OLD:
+            sez(f"{titlename} version is outdated; re-provisioning...", ctx=f"({lowername}) ")
+            provisioner(HAVE.localdir, version=WANT[keyname])
+        case InstallationState.NOT_INSTALLED:
+            provisioner(HAVE.localdir, version=WANT[keyname])
+
+
+def want_version_generic(
+    keyname: str, lowername: str, titlename: str, provisioner: Callable[[Path, str], None]
+):
+    want_generic(keyname, lowername, titlename, CheckDepBy.VERSION, provisioner)
+
+
+def want_cmake():
+    want_version_generic("10j-cmake", "cmake", "CMake", provision_cmake_into)
+    out: bytes = hermetic.run_shell_cmd("cmake --version", check=True, capture_output=True).stdout
+    outstr = out.decode("utf-8")
+    lines = outstr.splitlines()
+    if lines == []:
+        raise ProvisioningError("CMake version command returned no output.")
+    else:
+        match lines[0].split():
+            case ["cmake", "version", version]:
+                HAVE.note_we_have("10j-cmake", version=Version(version))
+            case _:
+                raise ProvisioningError(f"Unexpected output from CMake version command:\n{outstr}")
+
+
+def want_dune():
+    want_version_generic("10j-dune", "dune", "Dune", provision_dune_into)
+
+
+def want_opam():
+    want_version_generic("10j-opam", "opam", "opam", provision_opam_into)
+
+
+def want_ocaml():
+    want_version_generic("10j-ocaml", "ocaml", "OCaml", provision_ocaml_into)
+
+
+def want_10j_llvm():
+    want_version_generic("10j-llvm", "llvm", "LLVM", provision_10j_llvm_into)
+    out = subprocess.check_output([
+        hermetic.xj_llvm_root(HAVE.localdir) / "bin" / "llvm-config",
+        "--version",
+    ])
+    HAVE.note_we_have("10j-llvm", version=Version(out.decode("utf-8")))
+
+
+def want_10j_deps():
+    key = f"10j-build-deps_{platform.system()}-{platform.machine()}"
+    want_generic(
+        key,
+        "10j-build-deps",
+        "Tenjin build deps",
+        CheckDepBy.SHA256,
+        provision_10j_deps_into,
+    )
+    HAVE.note_we_have(key, sha256hex=WANT[key])
+
+
+def provision_ocaml_into(_localdir: Path, version: str):
+    provision_ocaml(version)
+
+    cp = hermetic.run_opam(["exec", "--", "ocamlc", "--version"], check=True, capture_output=True)
+    actual_version = Version(cp.stdout.decode("utf-8"))
+    HAVE.note_we_have("10j-ocaml", version=actual_version)
+
+
+def provision_ocaml(ocaml_version: str):
+    want_opam()
+
+    def say(msg: str):
+        sez(msg, ctx="(ocaml) ")
+
+    def install_ocaml(localdir: Path, ocaml_version: str):
+        opamroot = localdir / "opamroot"
+        if opamroot.is_dir():
+            shutil.rmtree(opamroot)
+
+        # Bubblewrap does not work inside Docker containers, at least not without
+        # heinous workarounds, if we're in Docker then we don't really need it anyway.
+        # So we'll try running a trivial command with it; if it fails, we'll tell opam
+        # not to use it.
+        try:
+            sandboxing_arg = []
+            subprocess.check_call([
+                hermetic.xj_build_deps(localdir) / "bin" / "bwrap",
+                "--",
+                "true",
+            ])
+        except subprocess.CalledProcessError:
+            say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
+            sandboxing_arg = ["--disable-sandboxing"]
+
+        say("================================================================")
+        say("Initializing opam; this will take about half a minute...")
+        say("      (subsequent output comes from `opam init --bare`)")
+        say("----------------------------------------------------------------")
+        say("")
+        hermetic.check_call_opam(
+            ["init", "--bare", "--no-setup", "--disable-completion", *sandboxing_arg],
+            eval_opam_env=False,
+        )
+
+        say("")
+        say("================================================================")
+        say("Installing OCaml; this will take four-ish minutes to compile...")
+        say("      (subsequent output comes from `opam switch create`)")
+        say("----------------------------------------------------------------")
+
+        hermetic.check_call_opam(
+            ["switch", "create", "tenjin", ocaml_version, "--no-switch"],
+            eval_opam_env=False,
+            env_ext={
+                "OPAMNOENVNOTICE": "1",
+                "CC": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang"),
+                "CXX": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang++"),
+            },
+        )
+        
+    if hermetic.opam_non_hermetic():
+        say("================================================================")
+        say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
+        say("----------------------------------------------------------------")
+    else:
+        install_ocaml(HAVE.localdir, WANT["10j-ocaml"])
 
 
 def provision_debian_bullseye_sysroot_into(target_arch: str, dest_sysroot: Path):
@@ -36,6 +331,8 @@ def provision_debian_bullseye_sysroot_into(target_arch: str, dest_sysroot: Path)
 
     CHROME_LINUX_SYSROOT_URL = "https://commondatastorage.googleapis.com/chrome-linux-sysroot"
 
+    # These don't go in WANT because they're quite stable;
+    # we don't expect to need a new version, ever.
     DEBIAN_BULLSEYE_SYSROOT_SHA256SUMS = {
         "x86_64": "36a164623d03f525e3dfb783a5e9b8a00e98e1ddd2b5cff4e449bd016dd27e50",
         "arm64": "2f915d821eec27515c0c6d21b69898e23762908d8d7ccc1aa2a8f5f25e8b7e18",
@@ -50,7 +347,7 @@ def provision_debian_bullseye_sysroot_into(target_arch: str, dest_sysroot: Path)
     dest_sysroot.mkdir()
     tarball = dest_sysroot / "tenjin-sysroot.tar.xz"
 
-    _localfilename, _headers = urllib.request.urlretrieve(url, tarball)
+    download(url, tarball)
     sha256sum = compute_sha256(tarball)
     if sha256sum != tarball_sha256sum:
         raise ProvisioningError("Sysroot hash verification failed!")
@@ -59,8 +356,6 @@ def provision_debian_bullseye_sysroot_into(target_arch: str, dest_sysroot: Path)
 
 
 def provision_opam_binary_into(opam_version: str, localdir: Path) -> None:
-    """Returns the path to the installed binary"""
-
     def say(msg: str):
         sez(msg, ctx="(opam) ")
 
@@ -89,59 +384,16 @@ def provision_opam_binary_into(opam_version: str, localdir: Path) -> None:
     tagged.replace(localdir / "opam")
 
 
-def install_ocaml(localdir: Path, say: Callable[[str], None]):
-    ocaml_version = "5.2.0"
-
-    opamroot = localdir / "opamroot"
-    if opamroot.is_dir():
-        shutil.rmtree(opamroot)
-
-    # Bubblewrap does not work inside Docker containers, at least not without
-    # heinous workarounds, if we're in Docker then we don't really need it anyway.
-    # So we'll try running a trivial command with it; if it fails, we'll tell opam
-    # not to use it.
-    try:
-        sandboxing_arg = []
-        subprocess.check_call([
-            hermetic.xj_build_deps(localdir) / "bin" / "bwrap",
-            "--",
-            "true",
-        ])
-    except subprocess.CalledProcessError:
-        say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
-        sandboxing_arg = ["--disable-sandboxing"]
-
-    say("================================================================")
-    say("Initializing opam; this will take about half a minute...")
-    say("      (subsequent output comes from `opam init --bare`)")
-    say("----------------------------------------------------------------")
-    say("")
-    hermetic.check_call_opam(
-        ["init", "--bare", "--no-setup", "--disable-completion", *sandboxing_arg],
-        eval_opam_env=False,
-    )
-
-    say("")
-    say("================================================================")
-    say("Installing OCaml; this will take four-ish minutes to compile...")
-    say("      (subsequent output comes from `opam switch create`)")
-    say("----------------------------------------------------------------")
-
-    subprocess.check_call(["date"])
-    hermetic.check_call_opam(
-        ["switch", "create", "tenjin", ocaml_version, "--no-switch"],
-        eval_opam_env=False,
-        env_ext={
-            "OPAMNOENVNOTICE": "1",
-            "CC": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang"),
-            "CXX": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang++"),
-        },
-    )
-    subprocess.check_call(["date"])
+def provision_dune_into(_localdir: Path, version: str):
+    provision_dune(version)
+    cp = hermetic.run_opam(["exec", "--", "dune", "--version"], check=True, capture_output=True)
+    seen_dune_version = cp.stdout.decode("utf-8")
+    HAVE.note_we_have("10j-dune", version=Version(seen_dune_version))
 
 
-def provision_dune():
-    dune_version = "3.18.1"
+# Precondition: not installed, or version too old.
+def provision_dune(dune_version: str):
+    want_ocaml()
 
     def say(msg: str):
         sez(msg, ctx="(opam) ")
@@ -150,7 +402,10 @@ def provision_dune():
     if cp.returncode == 0:
         actual_version = Version(cp.stdout.decode("utf-8"))
         if actual_version >= Version(dune_version):
-            say("Dune is already installed.")
+            # We only get here when the HAVE cache is incorrect: it thinks dune
+            # is not installed or is out of date, but dune is in fact installed
+            # with a new enough version.
+            say(f"Dune {actual_version} is already installed.")
             return
 
         say(f"Found dune version {actual_version}, but we need {dune_version}.")
@@ -163,27 +418,17 @@ def provision_dune():
     hermetic.check_call_opam(["install", f"dune.{dune_version}"])
 
 
-def provision_opam_into(localdir: Path):
+def provision_opam_into(localdir: Path, version: str):
     def say(msg: str):
         sez(msg, ctx="(opam) ")
 
-    opam_version = "2.3.0"
-
-    provision_opam_binary_into(opam_version, localdir)
-
-    if hermetic.opam_non_hermetic():
-        say("================================================================")
-        say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
-        say("----------------------------------------------------------------")
-    else:
-        install_ocaml(localdir, say)
+    provision_opam_binary_into(version, localdir)
 
     opam_version_seen = hermetic.run_opam(
         ["--version"], check=True, capture_output=True
     ).stdout.decode("utf-8")
     say(f"opam version: {opam_version_seen}")
-
-    provision_dune()
+    HAVE.note_we_have("10j-opam", version=Version(opam_version_seen))
 
 
 def provision_cmake_into(localdir: Path, version: str):
@@ -203,19 +448,22 @@ def provision_cmake_into(localdir: Path, version: str):
                     f"Tenjin does not yet support {sys_mach} for acquiring CMake."
                 )
 
-    download_and_extract_tarball(mk_url(), localdir, ctx="(cmake) ", time_estimate="a minute")
+    download_and_extract_tarball(
+        mk_url(), localdir / "cmake", ctx="(cmake) ", time_estimate="a minute"
+    )
 
 
-def provision_10j_llvm_into(localdir: Path):
-    if Path("LLVM-18.1.8-Linux-x86_64.tar.xz").is_file():
+def provision_10j_llvm_into(localdir: Path, version: str):
+    tarball_name = f"LLVM-{version}-Linux-x86_64.tar.xz"
+    if Path(tarball_name).is_file():
         extract_tarball(
-            Path("LLVM-18.1.8-Linux-x86_64.tar.xz"),
+            Path(tarball_name),
             hermetic.xj_llvm_root(localdir),
             ctx="(llvm) ",
             time_estimate="twenty seconds or so",
         )
     else:
-        url = "https://images.aarno-labs.com/amp/ben/LLVM-18.1.8-Linux-x86_64.tar.xz"
+        url = f"https://images.aarno-labs.com/amp/ben/{tarball_name}"
         download_and_extract_tarball(
             url, hermetic.xj_llvm_root(localdir), ctx="(llvm) ", time_estimate="a minute"
         )
@@ -230,7 +478,18 @@ def provision_10j_llvm_into(localdir: Path):
         with open(
             hermetic.xj_llvm_root(localdir) / "bin" / f"{name}.cfg", "w", encoding="utf-8"
         ) as f:
-            f.write(f"--sysroot <CFGDIR>/../{sysroot_name}\n")
+            f.write(
+                textwrap.dedent(f"""\
+                    --sysroot <CFGDIR>/../{sysroot_name}
+
+                    # This one's unfortunate. LLD defaults to --no-allow-shlib-undefined
+                    # but the libgcc_s.so.1 shipped with Ubuntu 22.04 has an undefined
+                    # symbol for _dl_find_object@GLIBC_2.35, and it seems like OCaml
+                    # explicitly links against the system library, via -L, rather than
+                    #  letting the compiler find it automatically in the sysroot.
+                    -Wl,--allow-shlib-undefined
+                    """)
+            )
 
     # Add symbolic links for the binutils-alike tools.
     # Tools not provided by LLVM: ranlib, size
@@ -241,18 +500,68 @@ def provision_10j_llvm_into(localdir: Path):
         if not dst.is_symlink():
             os.symlink(src, dst)
 
+    # These symbolic links follow a different naming pattern.
     for src, dst in [("clang", "cc"), ("clang++", "c++"), ("lld", "ld")]:
         src = hermetic.xj_llvm_root(localdir) / "bin" / src
         dst = hermetic.xj_llvm_root(localdir) / "bin" / dst
         if not dst.is_symlink():
             os.symlink(src, dst)
 
+    #                   COMMENTARY(goblint-cil-gcc-wrapper)
+    # Okay, this one is unfortunate. We generally only care about software that
+    # builds with Clang. But CodeHawk depends on goblint-cil, which uses C code
+    # in its config step that has GCC extensions which Clang doesn't support, &
+    # thus goblint-cil looks specifically for a GCC binary. So what we're gonna
+    # do here is write out a wrapper script for goblint-cil to find, which will
+    # intercept the GCC-specific stuff in the code it compiles and patch it out
+    # before passing it on to Clang. Hurk!
+    sadness = hermetic.xj_llvm_root(localdir) / "goblint-sadness"
+    sadness.mkdir(exist_ok=True)
+    gcc_wrapper_path = sadness / "gcc"
+    with open(gcc_wrapper_path, "w", encoding="utf-8") as f:
+        f.write(
+            textwrap.dedent("""\
+                #!/bin/sh
 
-def provision_10j_deps_into(localdir: Path):
+                # See COMMENTARY(goblint-cil-gcc-wrapper) in cli/provisioning.py
+
+                if [ "$1" = "--version" ]; then
+                    echo "gcc (GCC) 7.999.999"
+                elif [ "$*" = "-D_GNUCC machdep-ml.c -o machdep-ml.exe" ]; then
+
+                    CFILE=machdep-ml-clangcompat.c
+                    # Remove references to Clang-unsupported type _Float128.
+                    cat machdep-ml.c \
+                            | sed 's/_Float128 _Complex/struct { char _[32]; }/g' \
+                            | sed 's/_Float128/struct { char _[16]; }/g' > "$CFILE" || {
+                        rm -f "$CFILE"
+                        exit 1
+                    }
+
+                    exec clang -D_GNUCC "$CFILE" -o machdep-ml.exe
+                    rm -f "$CFILE"
+                else
+                    exec clang "$@"
+                fi
+                """)
+        )
+    gcc_wrapper_path.chmod(0o755)
+
+
+def provision_10j_deps_into(localdir: Path, version: str):
+    assert platform.system() == "Linux"
+    assert platform.machine() == "x86_64"
+
     url = "https://images.aarno-labs.com/amp/ben/xj-build-deps_linux-x86_64.tar.xz"
     download_and_extract_tarball(
-        url, hermetic.xj_build_deps(localdir), ctx="(builddeps) ", time_estimate="a jiffy"
+        url,
+        hermetic.xj_build_deps(localdir),
+        ctx="(builddeps) ",
+        time_estimate="a jiffy",
+        required_sha256sum=version,
     )
+
+    cook_pkg_config_within(localdir)
 
 
 #                COMMENTARY(pkg-config-paths)
@@ -334,29 +643,15 @@ def cook_pkg_config_within(localdir: Path):
         f.truncate()
     say("... done cooking pkg-config.")
 
-    assert not (path_of_unusual_size in data), "Oops, pkg-config was left undercooked!"
-
-
-def provision():
-    def say(msg: str):
-        sez(msg, ctx="(overall-provisioning) ")
-
-    localdir = repo_root.localdir()
-
-    say(f"Provisioning local directory {localdir}...")
-    say("This involves downloading and extracting a few large tarballs:")
-    say("    Clang+LLVM, opam/OCaml, a sysroot, and misc build tools like CMake.")
-    say("This will take a few minutes...")
-
-    provision_10j_deps_into(localdir)
-    provision_10j_llvm_into(localdir)
-    cook_pkg_config_within(localdir)
-    provision_cmake_into(localdir, version="3.31.7")
-    provision_opam_into(localdir)
+    assert path_of_unusual_size not in data, "Oops, pkg-config was left undercooked!"
 
 
 def download_and_extract_tarball(
-    tarball_url: str, target_dir: Path, ctx: str, time_estimate="a few seconds"
+    tarball_url: str,
+    target_dir: Path,
+    ctx: str,
+    time_estimate="a few seconds",
+    required_sha256sum: str | None = None,
 ) -> None:
     """
     Downloads a compressed tar file from the given URL and extracts it to the target directory.
@@ -376,20 +671,25 @@ def download_and_extract_tarball(
         temp_file = os.path.basename(urlparse(tarball_url).path)
 
         say(f"Downloading {tarball_url}...")
-        # Download the file
-        urllib.request.urlretrieve(tarball_url, temp_file)
-
-        extract_tarball(Path(temp_file), target_dir, ctx, None)
-
-        # Clean up the temporary file
-        os.remove(temp_file)
-
-        say(f"Download and extraction of {temp_file} completed successfully!")
+        download(tarball_url, temp_file)
     except Exception:
         # Clean up any temporary files if they exist
         if os.path.exists(temp_file):
             os.remove(temp_file)
         raise
+
+    if required_sha256sum is not None:
+        # Verify the SHA256 checksum
+        sha256sum = compute_sha256(temp_file)
+        if sha256sum != required_sha256sum:
+            raise ProvisioningError(f"SHA256 checksum verification failed for {temp_file}!")
+
+    extract_tarball(Path(temp_file), target_dir, ctx, None)
+
+    # Clean up the temporary file
+    os.remove(temp_file)
+
+    say(f"Download and extraction of {temp_file} completed successfully!")
 
 
 # The extraction process is about twice as slow on macOS
