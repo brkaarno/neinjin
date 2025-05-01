@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/brk/c2rust.git
+	branch = master
+	commit = d28087df86d7fca8532d8679d35efec66f074f8b
+	parent = 7843bfcbafb3f0e96baf7aaa07fa5bd1651c9e2e
+	method = merge
+	cmdver = 0.4.9
