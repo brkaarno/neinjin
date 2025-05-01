@@ -2,9 +2,13 @@ name: not-rocket-science
 
 on:
   push:
-    branches: [ "test/**" ]
+    branches: [ "test/**", "with-c2rust" ]
   pull_request:
     branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
 
 jobs:
   not-rocket-science-checks:
@@ -12,6 +16,8 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v4
+      
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
 
       - uses: brk/setup-ocaml-unsandboxed@89ccd7e026e5aa5244af063742f11cf633a6c0e1 # v3.3.0
         with:
@@ -24,6 +30,11 @@ jobs:
 
       - name: Health check
         run: cli/10j status
+
+      - name: Build c2rust
+        run: |
+          cd c2rust
+          cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
 
       - name: Code linting and formatting checks
         run: cli/10j check-star
