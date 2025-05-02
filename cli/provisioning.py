@@ -322,9 +322,10 @@ def provision_ocaml(ocaml_version: str):
         )
 
     if hermetic.opam_non_hermetic():
-        cp = hermetic.run_opam(["switch", "list"], check=True, capture_output=True)
+        subprocess.run(["opam", "config", "report"])
+        cp = subprocess.run(["opam", "switch", "list"], check=True, capture_output=True)
         if TENJIN_SWITCH in cp.stdout.decode("utf-8"):
-            if grab_ocaml_version_str() == ocaml_version:
+            if subprocess.run("opam", "--version", capture_output=True).stdout.decode('utf-8') == ocaml_version:
                 say("================================================================")
                 say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
                 say("----------------------------------------------------------------")
