@@ -373,11 +373,18 @@ def provision_opam_binary_into(opam_version: str, localdir: Path) -> None:
     tagged.replace(localdir / "opam")
 
     if hermetic.running_in_ci():
-        # XREF:ci-opam-paths
-        # We are in CI, but didn't have opam on the path already.
-        # Install it where (A) nrsr.yaml will cache it and (B) it'll be on PATH.
-        # Then our next CI run will be faster.
-        shutil.copy(Path(localdir, "opam"), Path.home() / ".local" / "bin" / "opam")
+        dotlocalbin = Path.home() / ".local" / "bin"
+        if str(dotlocalbin) in os.environ["PATH"]:
+            if not dotlocalbin.is_dir():
+                dotlocalbin.mkdir(parents=True)
+
+            # XREF:ci-opam-paths
+            # We are in CI, but didn't have opam on the path already.
+            # Install it where (A) nrsr.yaml will cache it and (B) it'll be on PATH.
+            # Then our next CI run will be faster.
+            shutil.copy(Path(localdir, "opam"), dotlocalbin / "opam")
+        else:
+            click.echo("WARNING: ~/.local/bin not on PATH anymore?!? OCaml cache won't work.")
 
 
 def provision_dune_into(_localdir: Path, version: str):
