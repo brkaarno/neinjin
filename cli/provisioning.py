@@ -300,7 +300,7 @@ def provision_ocaml(ocaml_version: str):
             say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
             sandboxing_arg = ["--disable-sandboxing"]
 
-        cp = subprocess.run(["opam", "config", "report"], capture_output=True)
+        cp = hermetic.run_opam(["config", "report"], eval_opam_env=False, capture_output=True)
         if b"please run `opam init'" in cp.stderr:
             say("================================================================")
             say("Initializing opam; this will take about half a minute...")
@@ -312,12 +312,11 @@ def provision_ocaml(ocaml_version: str):
                 eval_opam_env=False,
             )
 
-        cp = hermetic.run_opam(["switch", "list"], check=True, capture_output=True)
+        cp = hermetic.run_opam(
+            ["switch", "list"], eval_opam_env=False, check=True, capture_output=True
+        )
         if TENJIN_SWITCH in cp.stdout.decode("utf-8"):
-            if (
-                hermetic.run_opam(["--version"], capture_output=True).stdout.decode("utf-8")
-                == ocaml_version
-            ):
+            if grab_ocaml_version_str() == ocaml_version:
                 say("================================================================")
                 say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
                 say("----------------------------------------------------------------")
