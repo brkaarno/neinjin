@@ -244,12 +244,27 @@ def want_10j_deps():
     HAVE.note_we_have(key, sha256hex=WANT[key])
 
 
+# Prerequisite: opam provisioned.
+def grab_opam_version_str() -> str:
+    cp = hermetic.run_opam(["--version"], check=True, capture_output=True)
+    return cp.stdout.decode("utf-8")
+
+# Prerequisite: opam and ocaml provisioned.
+def grab_ocaml_version_str() -> str:
+    cp = hermetic.run_opam(["exec", "--", "ocamlc", "--version"], check=True, capture_output=True)
+    return cp.stdout.decode("utf-8")
+
+
+# Prerequisite: opam and dune provisioned.
+def grab_dune_version_str() -> str:
+    cp = hermetic.run_opam(["exec", "--", "dune", "--version"], check=True, capture_output=True)
+    return cp.stdout.decode("utf-8")
+
+
 def provision_ocaml_into(_localdir: Path, version: str):
     provision_ocaml(version)
 
-    cp = hermetic.run_opam(["exec", "--", "ocamlc", "--version"], check=True, capture_output=True)
-    actual_version = Version(cp.stdout.decode("utf-8"))
-    HAVE.note_we_have("10j-ocaml", version=actual_version)
+    HAVE.note_we_have("10j-ocaml", version=Version(grab_ocaml_version_str()))
 
 
 def provision_ocaml(ocaml_version: str):
@@ -258,7 +273,9 @@ def provision_ocaml(ocaml_version: str):
     def say(msg: str):
         sez(msg, ctx="(ocaml) ")
 
-    def install_ocaml(localdir: Path, ocaml_version: str):
+    TENJIN_SWITCH = "tenjin"
+
+    def install_ocaml(localdir: Path):
         opamroot = localdir / "opamroot"
         if opamroot.is_dir():
             shutil.rmtree(opamroot)
@@ -295,7 +312,7 @@ def provision_ocaml(ocaml_version: str):
         say("----------------------------------------------------------------")
 
         hermetic.check_call_opam(
-            ["switch", "create", "tenjin", ocaml_version, "--no-switch"],
+            ["switch", "create", TENJIN_SWITCH, ocaml_version, "--no-switch"],
             eval_opam_env=False,
             env_ext={
                 "OPAMNOENVNOTICE": "1",
@@ -305,11 +322,15 @@ def provision_ocaml(ocaml_version: str):
         )
 
     if hermetic.opam_non_hermetic():
-        say("================================================================")
-        say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
-        say("----------------------------------------------------------------")
-    else:
-        install_ocaml(HAVE.localdir, WANT["10j-ocaml"])
+        cp = hermetic.run_opam(["switch", "list"], check=True, capture_output=True)
+        if TENJIN_SWITCH in cp.stdout.decode("utf-8"):
+            if grab_ocaml_version_str() == ocaml_version:
+                say("================================================================")
+                say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
+                say("----------------------------------------------------------------")
+                return
+
+    install_ocaml(HAVE.localdir)
 
 
 def provision_debian_bullseye_sysroot_into(target_arch: str, dest_sysroot: Path):
@@ -389,9 +410,8 @@ def provision_opam_binary_into(opam_version: str, localdir: Path) -> None:
 
 def provision_dune_into(_localdir: Path, version: str):
     provision_dune(version)
-    cp = hermetic.run_opam(["exec", "--", "dune", "--version"], check=True, capture_output=True)
-    seen_dune_version = cp.stdout.decode("utf-8")
-    HAVE.note_we_have("10j-dune", version=Version(seen_dune_version))
+
+    HAVE.note_we_have("10j-dune", version=Version(grab_dune_version_str()))
 
 
 # Precondition: not installed, or version too old.
@@ -427,9 +447,7 @@ def provision_opam_into(localdir: Path, version: str):
 
     provision_opam_binary_into(version, localdir)
 
-    opam_version_seen = hermetic.run_opam(
-        ["--version"], check=True, capture_output=True
-    ).stdout.decode("utf-8")
+    opam_version_seen = grab_opam_version_str()
     say(f"opam version: {opam_version_seen}")
     HAVE.note_we_have("10j-opam", version=Version(opam_version_seen))
 
