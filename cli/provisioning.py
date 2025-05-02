@@ -266,10 +266,22 @@ def provision_ocaml_into(_localdir: Path, version: str):
     provision_ocaml(version)
 
     click.echo("opam env (no eval env):")
-    hermetic.run_opam(["env",], eval_opam_env=False, check=False)
+    hermetic.run_opam(
+        [
+            "env",
+        ],
+        eval_opam_env=False,
+        check=False,
+    )
     hermetic.run_opam(["config", "report"], eval_opam_env=False, check=False)
     click.echo("opam env (w/ eval env):")
-    hermetic.run_opam(["env",], eval_opam_env=True, check=False)
+    hermetic.run_opam(
+        [
+            "env",
+        ],
+        eval_opam_env=True,
+        check=False,
+    )
     hermetic.run_opam(["config", "report"], eval_opam_env=True, check=False)
     click.echo("opam exec ocaml --version (no env):")
     hermetic.run_opam(["exec", "--", "ocaml", "--version"], eval_opam_env=False, check=False)
@@ -328,9 +340,16 @@ def provision_ocaml(ocaml_version: str):
         if TENJIN_SWITCH in cp.stdout.decode("utf-8"):
             if grab_ocaml_version_str() == ocaml_version:
                 say("================================================================")
-                say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
+                say("Reusing cached OCaml, saving a few minutes of compiling...")
                 say("----------------------------------------------------------------")
                 return
+            else:
+                say("================================================================")
+                say("Removing cached OCaml switch due to version mismatch...")
+                say("----------------------------------------------------------------")
+                hermetic.check_call_opam(
+                    ["switch", "remove", TENJIN_SWITCH], eval_opam_env=False
+                )
 
         say("")
         say("================================================================")

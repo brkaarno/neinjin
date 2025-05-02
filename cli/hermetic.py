@@ -141,9 +141,7 @@ def run_opam(
 
         if eval_opam_env:
             opam_env_cmd = f"{localopam} env {shell_cmd(opam_subcmd_args)}"
-            # If we're using the system opam, we use the default switch.
-            if hermetic:
-                opam_env_cmd += " --switch=tenjin --set-switch --set-root"
+            opam_env_cmd += " --switch=tenjin --set-switch --set-root"
 
             return f"eval $({opam_env_cmd}) && {maincmd}"
         else:
