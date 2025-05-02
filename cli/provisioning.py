@@ -249,6 +249,7 @@ def grab_opam_version_str() -> str:
     cp = hermetic.run_opam(["--version"], check=True, capture_output=True)
     return cp.stdout.decode("utf-8")
 
+
 # Prerequisite: opam and ocaml provisioned.
 def grab_ocaml_version_str() -> str:
     cp = hermetic.run_opam(["exec", "--", "ocamlc", "--version"], check=True, capture_output=True)
@@ -276,9 +277,13 @@ def provision_ocaml(ocaml_version: str):
     TENJIN_SWITCH = "tenjin"
 
     def install_ocaml(localdir: Path):
-        opamroot = localdir / "opamroot"
-        if opamroot.is_dir():
-            shutil.rmtree(opamroot)
+        if not hermetic.opam_non_hermetic():
+            # For hermetic installations, we will simply bulldoze the existing
+            # opam root and start fresh. For non-hermetic installations, we'll
+            # try to reuse what's already there.
+            opamroot = localdir / "opamroot"
+            if opamroot.is_dir():
+                shutil.rmtree(opamroot)
 
         # Bubblewrap does not work inside Docker containers, at least not without
         # heinous workarounds, if we're in Docker then we don't really need it anyway.
@@ -295,15 +300,28 @@ def provision_ocaml(ocaml_version: str):
             say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
             sandboxing_arg = ["--disable-sandboxing"]
 
-        say("================================================================")
-        say("Initializing opam; this will take about half a minute...")
-        say("      (subsequent output comes from `opam init --bare`)")
-        say("----------------------------------------------------------------")
-        say("")
-        hermetic.check_call_opam(
-            ["init", "--bare", "--no-setup", "--disable-completion", *sandboxing_arg],
-            eval_opam_env=False,
-        )
+        cp = subprocess.run(["opam", "config", "report"], capture_output=True)
+        if "please run `opam init'" in cp.stderr:
+            say("================================================================")
+            say("Initializing opam; this will take about half a minute...")
+            say("      (subsequent output comes from `opam init --bare`)")
+            say("----------------------------------------------------------------")
+            say("")
+            hermetic.check_call_opam(
+                ["init", "--bare", "--no-setup", "--disable-completion", *sandboxing_arg],
+                eval_opam_env=False,
+            )
+
+        cp = hermetic.run_opam(["switch", "list"], check=True, capture_output=True)
+        if TENJIN_SWITCH in cp.stdout.decode("utf-8"):
+            if (
+                hermetic.run_opam(["--version"], capture_output=True).stdout.decode("utf-8")
+                == ocaml_version
+            ):
+                say("================================================================")
+                say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
+                say("----------------------------------------------------------------")
+                return
 
         say("")
         say("================================================================")
@@ -320,16 +338,6 @@ def provision_ocaml(ocaml_version: str):
                 "CXX": str(hermetic.xj_llvm_root(localdir) / "bin" / "clang++"),
             },
         )
-
-    if hermetic.opam_non_hermetic():
-        subprocess.run(["opam", "config", "report"])
-        cp = subprocess.run(["opam", "switch", "list"], check=True, capture_output=True)
-        if TENJIN_SWITCH in cp.stdout.decode("utf-8"):
-            if subprocess.run("opam", "--version", capture_output=True).stdout.decode('utf-8') == ocaml_version:
-                say("================================================================")
-                say("Reusing pre-installed OCaml, saving a few minutes of compiling...")
-                say("----------------------------------------------------------------")
-                return
 
     install_ocaml(HAVE.localdir)
 
