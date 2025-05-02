@@ -301,7 +301,7 @@ def provision_ocaml(ocaml_version: str):
             sandboxing_arg = ["--disable-sandboxing"]
 
         cp = subprocess.run(["opam", "config", "report"], capture_output=True)
-        if "please run `opam init'" in cp.stderr:
+        if b"please run `opam init'" in cp.stderr:
             say("================================================================")
             say("Initializing opam; this will take about half a minute...")
             say("      (subsequent output comes from `opam init --bare`)")
