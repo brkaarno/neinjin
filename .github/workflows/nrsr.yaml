@@ -47,7 +47,8 @@ jobs:
       - name: Build c2rust
         run: |
           cd c2rust
-          ../cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
+          LLVM_CONFIG_PATH=$(../cli/10j exec which llvm-config) \
+              ../cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
 
       - name: Code linting and formatting checks
         run: cli/10j check-star
