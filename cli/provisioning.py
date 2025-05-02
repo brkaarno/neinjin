@@ -17,6 +17,7 @@ import click
 import repo_root
 import hermetic
 from sha256sum import compute_sha256
+from constants import WANT
 
 
 class InstallationState(enum.Enum):
@@ -28,18 +29,6 @@ class InstallationState(enum.Enum):
 class CheckDepBy(enum.Enum):
     VERSION = 0
     SHA256 = 1
-
-
-# Note: the keys in this dict are not command names, or file names,
-# just arbitrary names for the things we are tracking.
-WANT = {
-    "10j-llvm": "18.1.8",
-    "10j-opam": "2.3.0",
-    "10j-dune": "3.18.0",
-    "10j-ocaml": "5.2.0",
-    "10j-cmake": "3.31.7",
-    "10j-build-deps_Linux-x86_64": "dda1346ffbb6835aeb2e29bd0acf5b1a4d81c4b9eb011a669a61436f1e75a3ee",
-}
 
 
 class TrackingWhatWeHave:
@@ -382,6 +371,13 @@ def provision_opam_binary_into(opam_version: str, localdir: Path) -> None:
     tagged = tagged[0]
     subprocess.check_call(["chmod", "+x", tagged])
     tagged.replace(localdir / "opam")
+
+    if hermetic.running_in_ci():
+        # XREF:ci-opam-paths
+        # We are in CI, but didn't have opam on the path already.
+        # Install it where (A) nrsr.yaml will cache it and (B) it'll be on PATH.
+        # Then our next CI run will be faster.
+        shutil.copy(Path(localdir, "opam"), Path.home() / ".local" / "bin" / "opam")
 
 
 def provision_dune_into(_localdir: Path, version: str):

@@ -93,6 +93,10 @@ def opamroot(localdir: Path) -> Path:
     return localdir / "opamroot"
 
 
+def running_in_ci() -> bool:
+    return os.environ.get("CI") in ("true", "1")
+
+
 def opam_non_hermetic() -> bool:
     """If we're running in CI and opam is installed, we should use it.
 
@@ -100,8 +104,7 @@ def opam_non_hermetic() -> bool:
     set up to use a version opam that is either known to be compatible,
     or that we want to test the compatibility of.
     """
-    running_in_ci = "GITHUB_WORKSPACE" in os.environ
-    return running_in_ci and shutil.which("opam") is not None
+    return running_in_ci() and shutil.which("opam") is not None
 
 
 def run_opam(

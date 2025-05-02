@@ -98,7 +98,7 @@ def do_check_py():
 
 def do_fmt_rs():
     root = repo_root.find_repo_root_dir_Path()
-    hermetic.run_shell_cmd(f"cd {root / 'c2rust'} && cargo +stable fmt -- --check", check=True)
+    hermetic.run_shell_cmd(f"cd {root / 'c2rust'} && cargo +stable fmt", check=True)
 
 
 def do_check_rs_fmt():
@@ -115,6 +115,14 @@ def do_check_rs():
         check=True,
     )
     # do_check_rs_fmt()  # c2rust is not yet fmt-clean, will tackle later
+
+
+def do_test_unit_rs():
+    root = repo_root.find_repo_root_dir_Path()
+    hermetic.run_shell_cmd(
+        f"cd {root / 'c2rust'} && cargo +stable test --locked -p c2rust -p c2rust-transpile",
+        check=True,
+    )
 
 
 def parse_git_name_status_line(bs: bytes) -> tuple[str, bytes]:
@@ -216,6 +224,14 @@ def check_rs():
 
 
 @cli.command()
+def test_unit_rs():
+    try:
+        do_test_unit_rs()
+    except subprocess.CalledProcessError:
+        sys.exit(1)
+
+
+@cli.command()
 def check_deps():
     do_check_deps(report=True)
 
@@ -249,6 +265,7 @@ def opam():
 def dune():
     "Run dune (with 10j's switch, etc)"
     pass  # placeholder command
+
 
 @cli.command()
 def cargo():
