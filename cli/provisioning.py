@@ -482,6 +482,9 @@ def provision_10j_llvm_into(localdir: Path, version: str):
                 textwrap.dedent(f"""\
                     --sysroot <CFGDIR>/../{sysroot_name}
 
+                    # temporarily enable verbose output, to debug ocaml/opam issue
+                    -v
+
                     # This one's unfortunate. LLD defaults to --no-allow-shlib-undefined
                     # but the libgcc_s.so.1 shipped with Ubuntu 22.04 has an undefined
                     # symbol for _dl_find_object@GLIBC_2.35, and it seems like OCaml
