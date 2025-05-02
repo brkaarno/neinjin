@@ -21,7 +21,7 @@ if __name__ == "__main__":
             def piece(k):
                 return f"{k}-{WANT['10j-' + k]}"
 
-            ocamlparts = ",".join(piece(k) for k in "ocaml opam dune".split())
-            print(",".join([platform.system(), platform.machine(), ocamlparts]))
+            ocamlparts = ";".join(piece(k) for k in "ocaml opam dune".split())
+            print(";".join([platform.system(), platform.machine(), ocamlparts]))
         case _:
             pass
