@@ -21,9 +21,12 @@ jobs:
 
       - uses: brk/setup-ocaml-unsandboxed@89ccd7e026e5aa5244af063742f11cf633a6c0e1 # v3.3.0
         with:
-          ocaml-compiler: 5
-          # Allow the chosen version of OCaml to float, even if the usual provisioning
-          # process would pin it.
+          ocaml-compiler: ocaml-variants.5.2.0+options,ocaml-option-no-compression
+          # libzstd is available in the runner image (when ocamlc is built) but not
+          # in 10j's sysroot (which applies when dune is built, during provisioning)
+          # and OCaml doesn't distinguish between its compile time and run time
+          # linking environments. If we add libzstd to the sysroot, we should be
+          # able to use a stock OCaml compiler.
 
       - name: Provision dependencies
         run: sh cli/sh/provision.sh
