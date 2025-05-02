@@ -44,14 +44,14 @@ jobs:
       - name: Health check
         run: cli/10j status
 
+      - name: Code linting and formatting checks
+        run: cli/10j check-star
+
       - name: Build c2rust
         run: |
           cd c2rust
           LLVM_CONFIG_PATH=$(../cli/10j exec which llvm-config) \
               ../cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
-
-      - name: Code linting and formatting checks
-        run: cli/10j check-star
 
       - name: Ensure no large files were accidentally added
         run: cli/10j check-repo-file-sizes
