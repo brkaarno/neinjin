@@ -265,6 +265,11 @@ def grab_dune_version_str() -> str:
 def provision_ocaml_into(_localdir: Path, version: str):
     provision_ocaml(version)
 
+    hermetic.run_opam(["env",], eval_opam_env=False, check=False)
+    hermetic.run_opam(["config", "report"], eval_opam_env=False, check=False)
+    hermetic.run_opam(["env",], eval_opam_env=True, check=False)
+    hermetic.run_opam(["exec", "--", "ocaml", "--version"], eval_opam_env=False, check=False)
+    hermetic.run_opam(["exec", "--", "ocaml", "--version"], eval_opam_env=True, check=False)
     HAVE.note_we_have("10j-ocaml", version=Version(grab_ocaml_version_str()))
 
 
