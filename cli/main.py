@@ -238,6 +238,7 @@ def check_deps():
 
 @cli.command()
 def check_star():
+    """Runs all code-level checks (formatting and linting)"""
     # The Click documentation discourages invoking one command from
     # another, and doing so is quite awkward.
     # We instead implement functionality in the do_*() functions
