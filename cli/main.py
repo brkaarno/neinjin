@@ -282,8 +282,9 @@ def exec():
 
 
 @cli.command()
-def provision():
-    provisioning.provision_desires()
+@click.argument("wanted", required=False, default="all")
+def provision(wanted: str):
+    provisioning.provision_desires(wanted)
 
 
 if __name__ == "__main__":
