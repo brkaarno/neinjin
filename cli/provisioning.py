@@ -119,7 +119,7 @@ def provision_desires():
     want_10j_deps()
     want_10j_llvm()
     want_cmake()
-    # want_dune()
+    want_dune()
 
 
 def require_rust_stuff():
@@ -537,9 +537,6 @@ def provision_10j_llvm_into(localdir: Path, version: str):
             f.write(
                 textwrap.dedent(f"""\
                     --sysroot <CFGDIR>/../{sysroot_name}
-
-                    # temporarily enable verbose output, to debug ocaml/opam issue
-                    -v
 
                     # This one's unfortunate. LLD defaults to --no-allow-shlib-undefined
                     # but the libgcc_s.so.1 shipped with Ubuntu 22.04 has an undefined

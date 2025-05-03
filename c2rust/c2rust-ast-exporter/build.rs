@@ -120,11 +120,6 @@ fn build_native(llvm_info: &LLVMInfo) {
     // Find where the (already built) LLVM lib dir is
     let llvm_lib_dir = &llvm_info.lib_dir;
 
-    eprintln!("# TENJIN: llvm_info.lib_dir in build_native() is: {}", llvm_lib_dir);
-    for (key, value) in env::vars() {
-        eprintln!("{}={}", key, value);
-    }
-
     match env::var("C2RUST_AST_EXPORTER_LIB_DIR") {
         Ok(libdir) => {
             println!("cargo:rustc-link-search=native={}", libdir);
