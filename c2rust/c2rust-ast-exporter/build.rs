@@ -129,12 +129,12 @@ fn build_native(llvm_info: &LLVMInfo) {
                 // Where to find LLVM/Clang CMake files
                 .define(
                     "LLVM_DIR",
-                    &env::var("CMAKE_LLVM_DIR")
+                    env::var("CMAKE_LLVM_DIR")
                         .unwrap_or_else(|_| format!("{}/cmake/llvm", llvm_lib_dir)),
                 )
                 .define(
                     "Clang_DIR",
-                    &env::var("CMAKE_CLANG_DIR")
+                    env::var("CMAKE_CLANG_DIR")
                         .unwrap_or_else(|_| format!("{}/cmake/clang", llvm_lib_dir)),
                 )
                 // What to build
@@ -328,7 +328,7 @@ impl LLVMInfo {
             } else {
                 vec!["--shared-mode"]
             };
-            invoke_command(llvm_config.as_deref(), args).map_or(false, |c| c == "static")
+            invoke_command(llvm_config.as_deref(), args).is_some_and(|c| c == "static")
         };
 
         let link_mode = if link_statically {

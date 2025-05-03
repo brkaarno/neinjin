@@ -7,7 +7,7 @@ use super::*;
 use failure::format_err;
 use proc_macro2::{TokenStream, TokenTree};
 
-impl<'c> Translation<'c> {
+impl Translation<'_> {
     pub fn convert_main(&self, main_id: CDeclId) -> TranslationResult<Box<Item>> {
         if let CDeclKind::Function {
             ref parameters,

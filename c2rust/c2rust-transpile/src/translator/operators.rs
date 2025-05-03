@@ -37,7 +37,7 @@ impl From<c_ast::BinOp> for BinOp {
     }
 }
 
-impl<'c> Translation<'c> {
+impl Translation<'_> {
     pub fn convert_binary_expr(
         &self,
         mut ctx: ExprContext,

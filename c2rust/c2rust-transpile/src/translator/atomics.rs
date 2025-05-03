@@ -3,7 +3,7 @@ use crate::format_translation_err;
 use super::*;
 use std::sync::atomic::Ordering;
 
-impl<'c> Translation<'c> {
+impl Translation<'_> {
     fn convert_constant_bool(&self, expr: CExprId) -> Option<bool> {
         let val = self.ast_context.resolve_expr(expr).1;
         match val {

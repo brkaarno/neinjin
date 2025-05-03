@@ -16,7 +16,7 @@ enum LibcFnArgType {
     Int,
 }
 
-impl<'c> Translation<'c> {
+impl Translation<'_> {
     /// Convert a call to a builtin function to a Rust expression
     pub fn convert_builtin(
         &self,

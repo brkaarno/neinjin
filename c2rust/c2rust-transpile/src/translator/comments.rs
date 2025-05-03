@@ -16,7 +16,7 @@ struct CommentLocator<'c> {
     last_id: Option<SomeId>,
 }
 
-impl<'c> CommentLocator<'c> {
+impl CommentLocator<'_> {
     /// Check for comments starting on the same line but after the end of the
     /// last node and before the end of the current node.
     fn check_last_for_trailing(&mut self, cur_loc: SrcLoc) {
@@ -68,7 +68,7 @@ impl<'c> CommentLocator<'c> {
     }
 }
 
-impl<'c> NodeVisitor for CommentLocator<'c> {
+impl NodeVisitor for CommentLocator<'_> {
     fn pre(&mut self, mut id: SomeId) -> bool {
         // Don't traverse into unvisited top-level decls, we should visit those
         // in sorted order.
@@ -155,7 +155,7 @@ impl<'c> NodeVisitor for CommentLocator<'c> {
     }
 }
 
-impl<'c> Translation<'c> {
+impl Translation<'_> {
     /// Create spans for each C AST node that has a comment attached to it.
     pub fn locate_comments(&mut self) {
         let mut top_decls: HashSet<CDeclId> =

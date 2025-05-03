@@ -49,7 +49,7 @@ impl<R> NamedReference<R> {
     }
 }
 
-impl<'c> Translation<'c> {
+impl Translation<'_> {
     /// Get back a Rust lvalue corresponding to the expression passed in.
     ///
     /// Do not use the output lvalue expression more than once.
