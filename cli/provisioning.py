@@ -345,9 +345,12 @@ def provision_ocaml(ocaml_version: str):
                 return
             else:
                 say("================================================================")
-                say("Removing cached OCaml switch due to version mismatch...")
+                say("Removing cached OCaml switch due to version mismatch.")
+                say(f"  had {grab_ocaml_version_str()}, want {ocaml_version}.")
                 say("----------------------------------------------------------------")
-                hermetic.check_call_opam(["switch", "remove", TENJIN_SWITCH], eval_opam_env=False)
+                hermetic.check_call_opam(
+                    ["switch", "remove", TENJIN_SWITCH, "-y"], eval_opam_env=False
+                )
 
         say("")
         say("================================================================")
