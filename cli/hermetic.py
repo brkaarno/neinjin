@@ -34,6 +34,8 @@ def mk_env_for(localdir: Path, with_tenjin_deps=True, env_ext=None, **kwargs) ->
         env = {**env, **env_ext}
 
     if with_tenjin_deps:
+        # We define LLVM_LIB_DIR for c2rust (unconditionally).
+        env["LLVM_LIB_DIR"] = str(xj_llvm_root(localdir) / "lib")
         env["PATH"] = os.pathsep.join([
             str(xj_build_deps(localdir) / "bin"),
             str(xj_llvm_root(localdir) / "bin"),

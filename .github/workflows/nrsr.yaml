@@ -49,6 +49,7 @@ jobs:
 
       - name: Build c2rust
         run: |
+          export XJ_SHOW_CMDS=1
           cd c2rust
           ../cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
 
