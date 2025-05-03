@@ -34,7 +34,7 @@ fn check_clang_version() -> Result<(), String> {
     // invocation that it pulls -isystem from. See Bindings::generate() for the
     // -isystem construction.
     if let Some(clang) = clang_sys::support::Clang::find(None, &[]) {
-        eprintln!("# TENJIN: clang.path in check_clang_version() is: {}", clang.path.clone());
+        eprintln!("# TENJIN: clang.path in check_clang_version() is: {}", clang.path.clone().display());
         let libclang_version = bindgen::clang_version()
             .parsed
             .ok_or("Could not parse version of libclang in bindgen")?;
