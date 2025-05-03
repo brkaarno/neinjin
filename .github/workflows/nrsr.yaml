@@ -46,6 +46,9 @@ jobs:
       - name: Health check
         run: cli/10j status
 
+      - name: Ensure no large files were accidentally added
+        run: cli/10j check-repo-file-sizes
+
       - name: Code linting and formatting checks
         run: cli/10j check-star
 
@@ -54,6 +57,3 @@ jobs:
           export XJ_SHOW_CMDS=1
           cd c2rust
           ../cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
-
-      - name: Ensure no large files were accidentally added
-        run: cli/10j check-repo-file-sizes
