@@ -50,8 +50,7 @@ jobs:
       - name: Build c2rust
         run: |
           cd c2rust
-          LLVM_CONFIG_PATH=$(../cli/10j exec which llvm-config) \
-              ../cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
+          ../cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
 
       - name: Ensure no large files were accidentally added
         run: cli/10j check-repo-file-sizes

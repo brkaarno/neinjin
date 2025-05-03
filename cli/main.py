@@ -298,7 +298,8 @@ if __name__ == "__main__":
         if sys.argv[1] == "dune":
             sys.exit(hermetic.run_opam(["exec", "--", "dune", *sys.argv[2:]]).returncode)
         if sys.argv[1] == "cargo":
-            sys.exit(hermetic.run_shell_cmd(sys.argv[1:]).returncode)
+            env_ext = {"LLVM_CONFIG_PATH": hermetic.xj_llvm_root() / "bin" / "llvm-config"}
+            sys.exit(hermetic.run_shell_cmd(sys.argv[1:], env_ext=env_ext).returncode)
         if sys.argv[1] == "exec":
             sys.exit(hermetic.run_shell_cmd(sys.argv[2:]).returncode)
         if sys.argv[1] == "true":
