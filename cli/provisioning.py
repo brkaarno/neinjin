@@ -247,19 +247,19 @@ def want_10j_deps():
 # Prerequisite: opam provisioned.
 def grab_opam_version_str() -> str:
     cp = hermetic.run_opam(["--version"], check=True, capture_output=True)
-    return cp.stdout.decode("utf-8")
+    return cp.stdout.decode("utf-8").strip()
 
 
 # Prerequisite: opam and ocaml provisioned.
 def grab_ocaml_version_str() -> str:
     cp = hermetic.run_opam(["exec", "--", "ocamlc", "--version"], check=True, capture_output=True)
-    return cp.stdout.decode("utf-8")
+    return cp.stdout.decode("utf-8").strip()
 
 
 # Prerequisite: opam and dune provisioned.
 def grab_dune_version_str() -> str:
     cp = hermetic.run_opam(["exec", "--", "dune", "--version"], check=True, capture_output=True)
-    return cp.stdout.decode("utf-8")
+    return cp.stdout.decode("utf-8").strip()
 
 
 def provision_ocaml_into(_localdir: Path, version: str):
@@ -344,10 +344,8 @@ def provision_ocaml(ocaml_version: str):
                 say("----------------------------------------------------------------")
                 return
             else:
-                say("================================================================")
                 say("Removing cached OCaml switch due to version mismatch.")
                 say(f"  had {grab_ocaml_version_str()}, want {ocaml_version}.")
-                say("----------------------------------------------------------------")
                 hermetic.check_call_opam(
                     ["switch", "remove", TENJIN_SWITCH, "-y"], eval_opam_env=False
                 )

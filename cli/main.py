@@ -29,7 +29,7 @@ def do_check_deps(report: bool):
         # 'git version 2.37.1 (Apple Git-137.1)'
         git_version_full = subprocess.check_output(["git", "version"]).decode("utf-8")
         git_version_mid = git_version_full.removeprefix("git version ")
-        return git_version_mid.split(" ")[0]
+        return git_version_mid.split(" ")[0].strip()
 
     def find_clang_version() -> str:
         # '''
