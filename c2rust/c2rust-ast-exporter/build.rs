@@ -34,6 +34,7 @@ fn check_clang_version() -> Result<(), String> {
     // invocation that it pulls -isystem from. See Bindings::generate() for the
     // -isystem construction.
     if let Some(clang) = clang_sys::support::Clang::find(None, &[]) {
+        eprintln!("# TENJIN: clang.path in check_clang_version() is: {}", clang.path.clone());
         let libclang_version = bindgen::clang_version()
             .parsed
             .ok_or("Could not parse version of libclang in bindgen")?;
@@ -118,6 +119,8 @@ fn generate_bindings() -> Result<(), &'static str> {
 fn build_native(llvm_info: &LLVMInfo) {
     // Find where the (already built) LLVM lib dir is
     let llvm_lib_dir = &llvm_info.lib_dir;
+
+    eprintln!("# TENJIN: llvm_info.lib_dir in build_native() is: {}", llvm_lib_dir);
 
     match env::var("C2RUST_AST_EXPORTER_LIB_DIR") {
         Ok(libdir) => {
