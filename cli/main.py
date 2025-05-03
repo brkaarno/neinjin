@@ -29,7 +29,7 @@ def do_check_deps(report: bool):
         # 'git version 2.37.1 (Apple Git-137.1)'
         git_version_full = subprocess.check_output(["git", "version"]).decode("utf-8")
         git_version_mid = git_version_full.removeprefix("git version ")
-        return git_version_mid.split(" ")[0]
+        return git_version_mid.split(" ")[0].strip()
 
     def find_clang_version() -> str:
         # '''
@@ -238,6 +238,7 @@ def check_deps():
 
 @cli.command()
 def check_star():
+    """Runs all code-level checks (formatting and linting)"""
     # The Click documentation discourages invoking one command from
     # another, and doing so is quite awkward.
     # We instead implement functionality in the do_*() functions
