@@ -13,7 +13,24 @@ env:
   RUSTC_WRAPPER: "sccache"
 
 jobs:
-  not-rocket-science-checks:
+  not-rocket-science-py:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Provision Python via uv
+        run: sh cli/sh/provision.sh uv
+
+      - name: Health check
+        run: cli/10j status
+
+      - name: Ensure no large files were accidentally added
+        run: cli/10j check-repo-file-sizes
+
+      - name: Code linting and formatting checks
+        run: cli/10j check-py
+
+  not-rocket-science-rs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +38,24 @@ jobs:
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
           workspaces: c2rust
+
+      - name: Provision Rust
+        run: sh cli/sh/provision.sh rust
+
+      - name: Build c2rust
+        run: |
+          export XJ_SHOW_CMDS=1
+          cd c2rust
+          ../cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
+
+      - name: Code linting and formatting checks
+        run: cli/10j check-rs
+
+
+  not-rocket-science-ocaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Extract OCaml Cache Key
         id: extract
@@ -41,20 +76,5 @@ jobs:
             ~/.local/bin/opam
           key: ${{ steps.extract.outputs.ocaml_key }}
           
-      - name: Provision dependencies
-        run: sh cli/sh/provision.sh
-
-      - name: Health check
-        run: cli/10j status
-
-      - name: Ensure no large files were accidentally added
-        run: cli/10j check-repo-file-sizes
-
-      - name: Code linting and formatting checks
-        run: cli/10j check-star
-
-      - name: Build c2rust
-        run: |
-          export XJ_SHOW_CMDS=1
-          cd c2rust
-          ../cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
+      - name: Provision OCaml
+        run: sh cli/sh/provision.sh ocaml

@@ -103,10 +103,15 @@ def download(url: str, filename: Path) -> None:
 # platform.machine() in ["x86_64", "arm64"]
 
 
-def provision_desires():
-    require_rust_stuff()
+def provision_desires(wanted: str):
+    assert wanted in "all llvm ocaml rust".split()
 
-    if HAVE.query("10j-dune") is None:
+    # Rust first because unlike the other stuff, we won't provision rustup
+    # ourselves, so if it's not available, we should inform the user ASAP.
+    if wanted in ("all", "rust"):
+        require_rust_stuff()
+
+    if wanted == "all" and HAVE.query("10j-dune") is None:
 
         def say(msg: str):
             sez(msg, ctx="(overall-provisioning) ")
@@ -116,10 +121,14 @@ def provision_desires():
         say("    Clang+LLVM, a sysroot, and misc build tools like CMake.")
         say("We'll also install Rust and OCaml, which will take a few minutes...")
 
+    # We get these unconditionally, because both Rust and OCaml (and/or the
+    # projects in those languages) end up needing them.
     want_10j_deps()
     want_10j_llvm()
     want_cmake()
-    want_dune()
+
+    if wanted in ("all", "ocaml"):
+        want_dune()
 
 
 def require_rust_stuff():
