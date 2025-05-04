@@ -110,7 +110,7 @@ def do_check_rs():
     root = repo_root.find_repo_root_dir_Path()
     hermetic.run_shell_cmd(
         f"cd {root / 'c2rust'} && cargo +stable clippy --locked"
-        " -p c2rust -p c2rust-transpile --verbose"
+        " -p c2rust -p c2rust-transpile"
         " -- -Aclippy::needless_lifetimes",
         check=True,
     )

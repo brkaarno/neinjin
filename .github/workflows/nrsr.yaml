@@ -43,7 +43,7 @@ jobs:
       - name: Build c2rust
         run: |
           cd c2rust
-          ../cli/10j cargo +stable build --verbose -p c2rust -p c2rust-transpile
+          ../cli/10j cargo +stable build --locked -p c2rust -p c2rust-transpile
 
   not-rocket-science-rs-lint:
     runs-on: ubuntu-latest
