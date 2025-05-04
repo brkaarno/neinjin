@@ -426,7 +426,7 @@ def provision_opam_binary_into(opam_version: str, localdir: Path) -> None:
     # Otherwise, we'll need to run the installer to get it.
     say("Downloading a local copy of opam...")
     cli_sh_dir = repo_root.find_repo_root_dir_Path() / "cli" / "sh"
-    installer_sh = cli_sh_dir / f"install-opam.sh"
+    installer_sh = cli_sh_dir / "install-opam.sh"
     download("https://opam.ocaml.org/install.sh", installer_sh)
     if not installer_sh.is_file():
         raise ProvisioningError(f"Unable to download installer script for opam {opam_version}.")
