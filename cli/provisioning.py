@@ -242,6 +242,9 @@ def want_10j_llvm():
 
 
 def want_10j_deps():
+    if platform.system() == "Darwin":
+        return
+
     key = f"10j-build-deps_{platform.system()}-{platform.machine()}"
     want_generic(
         key,
