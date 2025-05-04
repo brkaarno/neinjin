@@ -31,6 +31,8 @@ jobs:
 
   not-rocket-science-rs-test:
     runs-on: ubuntu-latest
+    env:
+      C2RUST_TESTED_CRATES: "-p c2rust -p c2rust-transpile -p c2rust-ast-printer"
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
@@ -41,10 +43,14 @@ jobs:
       - name: Provision Rust
         run: sh cli/sh/provision.sh rust
 
-      - name: Build c2rust
-        run: |
-          cd c2rust
-          ../cli/10j cargo +stable build --locked -p c2rust -p c2rust-transpile --release
+      - name: Build c2rust tests
+        run: cd c2rust && ../cli/10j cargo +stable test --locked --release $C2RUST_TESTED_CRATES --no-run
+
+      - name: Run c2rust unit tests
+        run: cd c2rust && ../cli/10j cargo +stable test --locked --release $C2RUST_TESTED_CRATES
+
+      - name: Build c2rust binaries
+        run: cd c2rust && ../cli/10j cargo +stable build --locked --release $C2RUST_TESTED_CRATES
 
   not-rocket-science-rs-lint:
     runs-on: ubuntu-latest
