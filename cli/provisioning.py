@@ -242,6 +242,9 @@ def want_10j_llvm():
 
 
 def want_10j_deps():
+    if platform.system() == "Darwin":
+        return
+
     key = f"10j-build-deps_{platform.system()}-{platform.machine()}"
     want_generic(
         key,
@@ -320,16 +323,17 @@ def provision_ocaml(ocaml_version: str):
         # heinous workarounds, if we're in Docker then we don't really need it anyway.
         # So we'll try running a trivial command with it; if it fails, we'll tell opam
         # not to use it.
-        try:
-            sandboxing_arg = []
-            subprocess.check_call([
-                hermetic.xj_build_deps(localdir) / "bin" / "bwrap",
-                "--",
-                "true",
-            ])
-        except subprocess.CalledProcessError:
-            say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
-            sandboxing_arg = ["--disable-sandboxing"]
+        sandboxing_arg = []
+        if platform.system() == "Linux":
+            try:
+                subprocess.check_call([
+                    hermetic.xj_build_deps(localdir) / "bin" / "bwrap",
+                    "--",
+                    "true",
+                ])
+            except subprocess.CalledProcessError:
+                say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
+                sandboxing_arg = ["--disable-sandboxing"]
 
         cp = hermetic.run_opam(["config", "report"], eval_opam_env=False, capture_output=True)
         if b"please run `opam init'" in cp.stderr:
@@ -426,7 +430,7 @@ def provision_opam_binary_into(opam_version: str, localdir: Path) -> None:
     # Otherwise, we'll need to run the installer to get it.
     say("Downloading a local copy of opam...")
     cli_sh_dir = repo_root.find_repo_root_dir_Path() / "cli" / "sh"
-    installer_sh = cli_sh_dir / f"install-opam.sh"
+    installer_sh = cli_sh_dir / "install-opam.sh"
     download("https://opam.ocaml.org/install.sh", installer_sh)
     if not installer_sh.is_file():
         raise ProvisioningError(f"Unable to download installer script for opam {opam_version}.")
@@ -506,20 +510,106 @@ def provision_cmake_into(localdir: Path, version: str):
                 return fmt_url("linux-x86_64")
             case ["Linux", "arm64"]:
                 return fmt_url("linux-aarch64")
-            case ["Darwin", "x86_64"]:
+            case ["Darwin", _]:
                 return fmt_url("macos-universal")
             case sys_mach:
                 raise ProvisioningError(
                     f"Tenjin does not yet support {sys_mach} for acquiring CMake."
                 )
 
-    download_and_extract_tarball(
-        mk_url(), localdir / "cmake", ctx="(cmake) ", time_estimate="a minute"
-    )
+    cmake_dir = localdir / "cmake"
+    download_and_extract_tarball(mk_url(), cmake_dir, ctx="(cmake) ", time_estimate="a minute")
+
+    if platform.system() == "Darwin" and (cmake_dir / "CMake.app").is_dir():
+        # The tarball for macOS contains a .app bundle; we'll make a symlink
+        # into it to create paths consistent with other platforms.
+        cmake_app_bin = cmake_dir / "CMake.app" / "Contents" / "bin"
+        os.symlink(cmake_app_bin, cmake_dir / "bin")
 
 
 def provision_10j_llvm_into(localdir: Path, version: str):
-    tarball_name = f"LLVM-{version}-Linux-x86_64.tar.xz"
+    def provision_clang_config_files(sysroot_path):
+        # Write config files to make sure that the sysroot is used by default.
+        for name in ("clang", "clang++", "cc", "c++"):
+            with open(
+                hermetic.xj_llvm_root(localdir) / "bin" / f"{name}.cfg", "w", encoding="utf-8"
+            ) as f:
+                f.write(
+                    textwrap.dedent(f"""\
+                        --sysroot {sysroot_path}
+
+                        # This one's unfortunate. LLD defaults to --no-allow-shlib-undefined
+                        # but the libgcc_s.so.1 shipped with Ubuntu 22.04 has an undefined
+                        # symbol for _dl_find_object@GLIBC_2.35, and it seems like OCaml
+                        # explicitly links against the system library, via -L, rather than
+                        #  letting the compiler find it automatically in the sysroot.
+                        -Wl,--allow-shlib-undefined
+                        """)
+                )
+
+    def provision_debian_sysroot(sysroot_name: str):
+        provision_debian_bullseye_sysroot_into(
+            platform.machine(), hermetic.xj_llvm_root(localdir) / sysroot_name
+        )
+
+        #                   COMMENTARY(goblint-cil-gcc-wrapper)
+        # Okay, this one is unfortunate. We generally only care about software that
+        # builds with Clang. But CodeHawk depends on goblint-cil, which uses C code
+        # in its config step that has GCC extensions which Clang doesn't support, &
+        # thus goblint-cil looks specifically for a GCC binary. So what we're gonna
+        # do here is write out a wrapper script for goblint-cil to find, which will
+        # intercept the GCC-specific stuff in the code it compiles and patch it out
+        # before passing it on to Clang. Hurk!
+        sadness = hermetic.xj_llvm_root(localdir) / "goblint-sadness"
+        sadness.mkdir(exist_ok=True)
+        gcc_wrapper_path = sadness / "gcc"
+        with open(gcc_wrapper_path, "w", encoding="utf-8") as f:
+            f.write(
+                textwrap.dedent("""\
+                    #!/bin/sh
+
+                    # See COMMENTARY(goblint-cil-gcc-wrapper) in cli/provisioning.py
+
+                    if [ "$1" = "--version" ]; then
+                        echo "gcc (GCC) 7.999.999"
+                    elif [ "$*" = "-D_GNUCC machdep-ml.c -o machdep-ml.exe" ]; then
+
+                        CFILE=machdep-ml-clangcompat.c
+                        # Remove references to Clang-unsupported type _Float128.
+                        cat machdep-ml.c \
+                                | sed 's/_Float128 _Complex/struct { char _[32]; }/g' \
+                                | sed 's/_Float128/struct { char _[16]; }/g' > "$CFILE" || {
+                            rm -f "$CFILE"
+                            exit 1
+                        }
+
+                        exec clang -D_GNUCC "$CFILE" -o machdep-ml.exe
+                        rm -f "$CFILE"
+                    else
+                        exec clang "$@"
+                    fi
+                    """)
+            )
+        gcc_wrapper_path.chmod(0o755)
+
+    def add_binutils_alike_symbolic_links():
+        # Add symbolic links for the binutils-alike tools.
+        # Tools not provided by LLVM: ranlib, size
+        binutils_names = ["ar", "as", "nm", "objcopy", "objdump", "readelf", "strings", "strip"]
+        for name in binutils_names:
+            src = hermetic.xj_llvm_root(localdir) / "bin" / f"llvm-{name}"
+            dst = hermetic.xj_llvm_root(localdir) / "bin" / f"{name}"
+            if not dst.is_symlink():
+                os.symlink(src, dst)
+
+        # These symbolic links follow a different naming pattern.
+        for src, dst in [("clang", "cc"), ("clang++", "c++"), ("lld", "ld")]:
+            src = hermetic.xj_llvm_root(localdir) / "bin" / src
+            dst = hermetic.xj_llvm_root(localdir) / "bin" / dst
+            if not dst.is_symlink():
+                os.symlink(src, dst)
+
+    tarball_name = f"LLVM-{version}-{platform.system()}-{platform.machine()}.tar.xz"
     if Path(tarball_name).is_file():
         extract_tarball(
             Path(tarball_name),
@@ -533,100 +623,18 @@ def provision_10j_llvm_into(localdir: Path, version: str):
             url, hermetic.xj_llvm_root(localdir), ctx="(llvm) ", time_estimate="a minute"
         )
 
-    sysroot_name = "sysroot"
-    provision_debian_bullseye_sysroot_into(
-        platform.machine(), hermetic.xj_llvm_root(localdir) / sysroot_name
-    )
-
-    # Write config files to make sure that the sysroot is used by default.
-    for name in ("clang", "clang++", "cc", "c++"):
-        with open(
-            hermetic.xj_llvm_root(localdir) / "bin" / f"{name}.cfg", "w", encoding="utf-8"
-        ) as f:
-            f.write(
-                textwrap.dedent(f"""\
-                    --sysroot <CFGDIR>/../{sysroot_name}
-
-                    # This one's unfortunate. LLD defaults to --no-allow-shlib-undefined
-                    # but the libgcc_s.so.1 shipped with Ubuntu 22.04 has an undefined
-                    # symbol for _dl_find_object@GLIBC_2.35, and it seems like OCaml
-                    # explicitly links against the system library, via -L, rather than
-                    #  letting the compiler find it automatically in the sysroot.
-                    -Wl,--allow-shlib-undefined
-                    """)
+    match platform.system():
+        case "Linux":
+            sysroot_name = "sysroot"
+            provision_debian_sysroot(sysroot_name)
+            provision_clang_config_files(sysroot_path=f"<CFGDIR>/../{sysroot_name}")
+        case "Darwin":
+            xcrun_path = (
+                subprocess.check_output(["xcrun", "--show-sdk-path"]).decode("utf-8").strip()
             )
+            provision_clang_config_files(sysroot_path=xcrun_path)
 
-    # Add symbolic links for the binutils-alike tools.
-    # Tools not provided by LLVM: ranlib, size
-    binutils_names = ["ar", "as", "nm", "objcopy", "objdump", "readelf", "strings", "strip"]
-    for name in binutils_names:
-        src = hermetic.xj_llvm_root(localdir) / "bin" / f"llvm-{name}"
-        dst = hermetic.xj_llvm_root(localdir) / "bin" / f"{name}"
-        if not dst.is_symlink():
-            os.symlink(src, dst)
-
-    # These symbolic links follow a different naming pattern.
-    for src, dst in [("clang", "cc"), ("clang++", "c++"), ("lld", "ld")]:
-        src = hermetic.xj_llvm_root(localdir) / "bin" / src
-        dst = hermetic.xj_llvm_root(localdir) / "bin" / dst
-        if not dst.is_symlink():
-            os.symlink(src, dst)
-
-    #                   COMMENTARY(goblint-cil-gcc-wrapper)
-    # Okay, this one is unfortunate. We generally only care about software that
-    # builds with Clang. But CodeHawk depends on goblint-cil, which uses C code
-    # in its config step that has GCC extensions which Clang doesn't support, &
-    # thus goblint-cil looks specifically for a GCC binary. So what we're gonna
-    # do here is write out a wrapper script for goblint-cil to find, which will
-    # intercept the GCC-specific stuff in the code it compiles and patch it out
-    # before passing it on to Clang. Hurk!
-    sadness = hermetic.xj_llvm_root(localdir) / "goblint-sadness"
-    sadness.mkdir(exist_ok=True)
-    gcc_wrapper_path = sadness / "gcc"
-    with open(gcc_wrapper_path, "w", encoding="utf-8") as f:
-        f.write(
-            textwrap.dedent("""\
-                #!/bin/sh
-
-                # See COMMENTARY(goblint-cil-gcc-wrapper) in cli/provisioning.py
-
-                if [ "$1" = "--version" ]; then
-                    echo "gcc (GCC) 7.999.999"
-                elif [ "$*" = "-D_GNUCC machdep-ml.c -o machdep-ml.exe" ]; then
-
-                    CFILE=machdep-ml-clangcompat.c
-                    # Remove references to Clang-unsupported type _Float128.
-                    cat machdep-ml.c \
-                            | sed 's/_Float128 _Complex/struct { char _[32]; }/g' \
-                            | sed 's/_Float128/struct { char _[16]; }/g' > "$CFILE" || {
-                        rm -f "$CFILE"
-                        exit 1
-                    }
-
-                    exec clang -D_GNUCC "$CFILE" -o machdep-ml.exe
-                    rm -f "$CFILE"
-                else
-                    exec clang "$@"
-                fi
-                """)
-        )
-    gcc_wrapper_path.chmod(0o755)
-
-
-def provision_10j_deps_into(localdir: Path, version: str):
-    assert platform.system() == "Linux"
-    assert platform.machine() == "x86_64"
-
-    url = "https://images.aarno-labs.com/amp/ben/xj-build-deps_linux-x86_64.tar.xz"
-    download_and_extract_tarball(
-        url,
-        hermetic.xj_build_deps(localdir),
-        ctx="(builddeps) ",
-        time_estimate="a jiffy",
-        required_sha256sum=version,
-    )
-
-    cook_pkg_config_within(localdir)
+    add_binutils_alike_symbolic_links()
 
 
 #                COMMENTARY(pkg-config-paths)
@@ -709,6 +717,40 @@ def cook_pkg_config_within(localdir: Path):
     say("... done cooking pkg-config.")
 
     assert path_of_unusual_size not in data, "Oops, pkg-config was left undercooked!"
+
+
+def provision_10j_deps_into(localdir: Path, version: str):
+    match [platform.system(), platform.machine()]:
+        case ["Linux", "x86_64"]:
+            url = "https://images.aarno-labs.com/amp/ben/xj-build-deps_linux-x86_64.tar.xz"
+            download_and_extract_tarball(
+                url,
+                hermetic.xj_build_deps(localdir),
+                ctx="(builddeps) ",
+                time_estimate="a jiffy",
+                required_sha256sum=version,
+            )
+
+            cook_pkg_config_within(localdir)
+
+        case ["Darwin", _]:
+            # For macOS, we don't do hermetic build deps; instead, we rely on homebrew.
+            # This bypasses the need to cook pkg-config, because it will have hardcoded
+            # paths that are suitable for interoperation with homebrew.
+            if shutil.which("brew") is None:
+                raise ProvisioningError(
+                    "Homebrew is not installed. Please install it from https://brew.sh"
+                )
+
+            if shutil.which("ninja") is None:
+                subprocess.check_call(["brew", "install", "ninja"])
+
+            if shutil.which("pkg-config") is None:
+                subprocess.check_call(["brew", "install", "pkg-config"])
+
+            # The other dependencies we need on Linux, like patch and make,
+            # should have been provided already by Xcode Developer Tools.
+            # Bubblewrap is Linux-only.
 
 
 def download_and_extract_tarball(
