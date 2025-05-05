@@ -323,16 +323,17 @@ def provision_ocaml(ocaml_version: str):
         # heinous workarounds, if we're in Docker then we don't really need it anyway.
         # So we'll try running a trivial command with it; if it fails, we'll tell opam
         # not to use it.
-        try:
-            sandboxing_arg = []
-            subprocess.check_call([
-                hermetic.xj_build_deps(localdir) / "bin" / "bwrap",
-                "--",
-                "true",
-            ])
-        except subprocess.CalledProcessError:
-            say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
-            sandboxing_arg = ["--disable-sandboxing"]
+        sandboxing_arg = []
+        if platform.system() == "Linux":
+            try:
+                subprocess.check_call([
+                    hermetic.xj_build_deps(localdir) / "bin" / "bwrap",
+                    "--",
+                    "true",
+                ])
+            except subprocess.CalledProcessError:
+                say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
+                sandboxing_arg = ["--disable-sandboxing"]
 
         cp = hermetic.run_opam(["config", "report"], eval_opam_env=False, capture_output=True)
         if b"please run `opam init'" in cp.stderr:
@@ -516,18 +517,18 @@ def provision_cmake_into(localdir: Path, version: str):
                     f"Tenjin does not yet support {sys_mach} for acquiring CMake."
                 )
 
-    download_and_extract_tarball(
-        mk_url(), localdir / "cmake", ctx="(cmake) ", time_estimate="a minute"
-    )
+    cmake_dir = localdir / "cmake"
+    download_and_extract_tarball(mk_url(), cmake_dir, ctx="(cmake) ", time_estimate="a minute")
+
+    if platform.system() == "Darwin" and (cmake_dir / "CMake.app").is_dir():
+        # The tarball for macOS contains a .app bundle; we'll make a symlink
+        # into it to create paths consistent with other platforms.
+        cmake_app_bin = cmake_dir / "CMake.app" / "Contents" / "bin"
+        os.symlink(cmake_app_bin, cmake_dir / "bin")
 
 
 def provision_10j_llvm_into(localdir: Path, version: str):
-    def provision_debian_sysroot():
-        sysroot_name = "sysroot"
-        provision_debian_bullseye_sysroot_into(
-            platform.machine(), hermetic.xj_llvm_root(localdir) / sysroot_name
-        )
-
+    def provision_clang_config_files(sysroot_path):
         # Write config files to make sure that the sysroot is used by default.
         for name in ("clang", "clang++", "cc", "c++"):
             with open(
@@ -535,7 +536,7 @@ def provision_10j_llvm_into(localdir: Path, version: str):
             ) as f:
                 f.write(
                     textwrap.dedent(f"""\
-                        --sysroot <CFGDIR>/../{sysroot_name}
+                        --sysroot {sysroot_path}
 
                         # This one's unfortunate. LLD defaults to --no-allow-shlib-undefined
                         # but the libgcc_s.so.1 shipped with Ubuntu 22.04 has an undefined
@@ -545,6 +546,11 @@ def provision_10j_llvm_into(localdir: Path, version: str):
                         -Wl,--allow-shlib-undefined
                         """)
                 )
+
+    def provision_debian_sysroot(sysroot_name: str):
+        provision_debian_bullseye_sysroot_into(
+            platform.machine(), hermetic.xj_llvm_root(localdir) / sysroot_name
+        )
 
         #                   COMMENTARY(goblint-cil-gcc-wrapper)
         # Okay, this one is unfortunate. We generally only care about software that
@@ -617,8 +623,16 @@ def provision_10j_llvm_into(localdir: Path, version: str):
             url, hermetic.xj_llvm_root(localdir), ctx="(llvm) ", time_estimate="a minute"
         )
 
-    if platform.system() == "Linux":
-        provision_debian_sysroot()
+    match platform.system():
+        case "Linux":
+            sysroot_name = "sysroot"
+            provision_debian_sysroot(sysroot_name)
+            provision_clang_config_files(sysroot_path=f"<CFGDIR>/../{sysroot_name}")
+        case "Darwin":
+            xcrun_path = (
+                subprocess.check_output(["xcrun", "--show-sdk-path"]).decode("utf-8").strip()
+            )
+            provision_clang_config_files(sysroot_path=xcrun_path)
 
     add_binutils_alike_symbolic_links()
 
