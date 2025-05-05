@@ -277,28 +277,7 @@ def grab_dune_version_str() -> str:
 def provision_ocaml_into(_localdir: Path, version: str):
     provision_ocaml(version)
 
-    click.echo("opam env (no eval env):")
-    hermetic.run_opam(
-        [
-            "env",
-        ],
-        eval_opam_env=False,
-        check=False,
-    )
-    hermetic.run_opam(["config", "report"], eval_opam_env=False, check=False)
-    click.echo("opam env (w/ eval env):")
-    hermetic.run_opam(
-        [
-            "env",
-        ],
-        eval_opam_env=True,
-        check=False,
-    )
-    hermetic.run_opam(["config", "report"], eval_opam_env=True, check=False)
-    click.echo("opam exec ocaml --version (no env):")
-    hermetic.run_opam(["exec", "--", "ocaml", "--version"], eval_opam_env=False, check=False)
-    click.echo("opam exec ocaml --version (w/ env):")
-    hermetic.run_opam(["exec", "--", "ocaml", "--version"], eval_opam_env=True, check=False)
+    hermetic.run_opam(["config", "report"], check=False)
     HAVE.note_we_have("10j-ocaml", version=Version(grab_ocaml_version_str()))
 
 
@@ -529,6 +508,19 @@ def provision_cmake_into(localdir: Path, version: str):
 
 def provision_10j_llvm_into(localdir: Path, version: str):
     def provision_clang_config_files(sysroot_path):
+        match platform.system():
+            case "Linux":
+                platform_specific_stuff = textwrap.dedent("""\
+                    # This one's unfortunate. LLD defaults to --no-allow-shlib-undefined
+                    # but the libgcc_s.so.1 shipped with Ubuntu 22.04 has an undefined
+                    # symbol for _dl_find_object@GLIBC_2.35, and it seems like OCaml
+                    # explicitly links against the system library, via -L, rather than
+                    #  letting the compiler find it automatically in the sysroot.
+                    -Wl,--allow-shlib-undefined
+                    """)
+            case _:
+                platform_specific_stuff = ""
+
         # Write config files to make sure that the sysroot is used by default.
         for name in ("clang", "clang++", "cc", "c++"):
             with open(
@@ -537,13 +529,7 @@ def provision_10j_llvm_into(localdir: Path, version: str):
                 f.write(
                     textwrap.dedent(f"""\
                         --sysroot {sysroot_path}
-
-                        # This one's unfortunate. LLD defaults to --no-allow-shlib-undefined
-                        # but the libgcc_s.so.1 shipped with Ubuntu 22.04 has an undefined
-                        # symbol for _dl_find_object@GLIBC_2.35, and it seems like OCaml
-                        # explicitly links against the system library, via -L, rather than
-                        #  letting the compiler find it automatically in the sysroot.
-                        -Wl,--allow-shlib-undefined
+                        {platform_specific_stuff}
                         """)
                 )
 
@@ -603,7 +589,14 @@ def provision_10j_llvm_into(localdir: Path, version: str):
                 os.symlink(src, dst)
 
         # These symbolic links follow a different naming pattern.
-        for src, dst in [("clang", "cc"), ("clang++", "c++"), ("lld", "ld")]:
+        symlinks = [("clang", "cc"), ("clang++", "c++")]
+        if platform.system() != "Darwin":
+            # On macOS, lld does not support -r (--relocatable) but the flag is used
+            # by OCaml's build system, so we omit the symlink. This means that Clang
+            # will use ld64.lld directly, but when OCaml invokes ld, it will get the
+            # system's ld64 (non-LLD).
+            symlinks.append(("lld", "ld"))
+        for src, dst in symlinks:
             src = hermetic.xj_llvm_root(localdir) / "bin" / src
             dst = hermetic.xj_llvm_root(localdir) / "bin" / dst
             if not dst.is_symlink():
