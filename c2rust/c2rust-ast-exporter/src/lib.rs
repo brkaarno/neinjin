@@ -114,10 +114,12 @@ unsafe fn marshal_result(result: *const ffi::ExportResult) -> HashMap<String, Ve
         let cbytes = *res.bytes.offset(i);
 
         #[cfg(target_pointer_width = "64")]
-        let csize_usize = csize;
+        let csize_usize: usize = csize;
 
         #[cfg(not(target_pointer_width = "64"))]
-        let csize_usize = csize.try_into().expect("csize too large for usize on 32-bit");
+        let csize_usize: usize = csize
+            .try_into()
+            .expect("csize too large for usize on 32-bit");
 
         let bytes = slice::from_raw_parts(cbytes, csize_usize);
         let mut v = Vec::new();
