@@ -1,8 +1,10 @@
 import subprocess
+import shlex
 import shutil
 import time
 from pathlib import Path
 import os
+from typing import Sequence
 
 import click
 
@@ -73,20 +75,73 @@ def run_command_with_progress(command, stdout_file, stderr_file, shell=False) ->
         assert proc.returncode == 0, f"Command failed with return code {proc.returncode}"
 
 
-def run_shell_cmd(
-    cmd: str | list[object], check=False, with_tenjin_deps=True, env_ext=None, **kwargs
-) -> subprocess.CompletedProcess:
-    if not isinstance(cmd, str):
-        cmd = " ".join(str(x) for x in cmd)
+type RunSpec = str | Sequence[str | bytes | os.PathLike[str] | os.PathLike[bytes]]
 
+
+def run(
+    cmd: RunSpec, check=False, with_tenjin_deps=True, env_ext=None, **kwargs
+) -> subprocess.CompletedProcess:
     if os.environ.get("XJ_SHOW_CMDS", "0") != "0":
         click.echo(f": {cmd}")
 
     return subprocess.run(
         cmd,
         check=check,
-        shell=True,
         env=mk_env_for(repo_root.localdir(), with_tenjin_deps, env_ext),
+        **kwargs,
+    )
+
+
+def run_shell_cmd(
+    cmd: RunSpec, check=False, with_tenjin_deps=True, env_ext=None, **kwargs
+) -> subprocess.CompletedProcess:
+    if not isinstance(cmd, str):
+        cmd = " ".join(shlex.quote(str(x)) for x in cmd)
+
+    return run(
+        cmd, check=check, with_tenjin_deps=with_tenjin_deps, env_ext=env_ext, shell=True, **kwargs
+    )
+
+
+def cargo_toolchain_specifier() -> str:
+    return "+stable"
+
+
+def cargo_encoded_rustflags_env_ext() -> dict:
+    # We need this to get Cargo to build executables and tests (which, on
+    # macOS, end up linking to libclang-cpp.dylib) with an embedded rpath
+    # entry that allows the running binary to find our LLVM library.
+    #
+    # For executables that we control the invocation of, we could use
+    # LD_LIBRARY_PATH or similar, but for tests it's awkward because cargo
+    # does the build and run all in one step. The downside of what we do here
+    # is that the binaries are not relocatable between machines, which will
+    # have differing paths for repo_root.localdir().
+    #
+    # Per https://doc.rust-lang.org/cargo/reference/config.html#buildrustflags
+    # we cannot reliably use --config because RUSTFLAGS takes precedence and
+    # settings are not merged. So we look up the value of RUSTFLAGS, if any,
+    # and add it to CARGO_ENCODED_RUSTFLAGS, which takes precedence over
+    # RUSTFLAGS itself.
+    llvm_lib_dir = xj_llvm_root(repo_root.localdir()) / "lib"
+
+    rustflags = os.environ.get("RUSTFLAGS", "")
+    rustflags_parts = rustflags.split()
+    rustflags_parts.extend(["-C", f"link-args=-Wl,-rpath,{llvm_lib_dir}"])
+    return {
+        "CARGO_ENCODED_RUSTFLAGS": b"\x1f".join(x.encode("utf-8") for x in rustflags_parts),
+    }
+
+
+def run_cargo_in(
+    args: list[str], cwd: Path | None, check=True, **kwargs
+) -> subprocess.CompletedProcess:
+    return run(
+        ["cargo", cargo_toolchain_specifier(), *args],
+        cwd=cwd,
+        check=check,
+        with_tenjin_deps=True,
+        env_ext=cargo_encoded_rustflags_env_ext(),
         **kwargs,
     )
 
@@ -124,6 +179,8 @@ def run_opam(
                 # sure the subcmd args come before the double dash, otherwise we'll
                 # pass them to `dune` instead of `opam exec`!
                 return [subcmd, *subcmd_args, *rest]
+            case _:
+                raise ValueError("Invalid args for opam command")
 
     def mk_shell_cmd() -> str:
         def shell_cmd(parts: list[str]) -> str:
@@ -133,13 +190,13 @@ def run_opam(
 
         opam_subcmd_args = ["--cli=2.3"]
         if hermetic:
-            opam_subcmd_args += ["--root", opamroot(localdir)]
+            opam_subcmd_args += ["--root", str(opamroot(localdir))]
         else:
             # We save about four minutes per run in CI by using the system opam.
             # If it appears to be installed, use it.
             pass
 
-        maincmd = shell_cmd([localopam, *insert_opam_subcmd_args(args, opam_subcmd_args)])
+        maincmd = shell_cmd([str(localopam), *insert_opam_subcmd_args(args, opam_subcmd_args)])
 
         if eval_opam_env:
             opam_env_cmd = f"{localopam} env {shell_cmd(opam_subcmd_args)}"

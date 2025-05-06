@@ -7,7 +7,7 @@ def localdir() -> Path:
     return find_repo_root_dir_Path() / "_local"
 
 
-def find_repo_root_dir_Path(start_dir=None) -> Path | None:
+def find_repo_root_dir_Path(start_dir=None) -> Path:
     def validate_candidate_dir(p: Path):
         return (p / "cli" / "sh" / "provision.sh").is_file()
 
@@ -28,6 +28,6 @@ def find_repo_root_dir_Path(start_dir=None) -> Path | None:
 
         # Keep going up until we hit the filesystem root
         if p == p.parent:
-            return None
+            raise FileNotFoundError("Could not find the repo root directory.")
 
         p = p.parent

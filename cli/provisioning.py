@@ -5,7 +5,7 @@ import tarfile
 import shutil
 import subprocess
 from urllib.parse import urlparse
-from typing import Callable
+from typing import Protocol
 import json
 import enum
 import sys
@@ -159,7 +159,7 @@ def require_rust_stuff():
                 say(f"Tenjin doesn't yet support {sysname}, sorry!")
                 sys.exit(1)
 
-        download("https://sh.rustup.rs", "rustup-installer.sh")
+        download("https://sh.rustup.rs", Path("rustup-installer.sh"))
         subprocess.check_call(["chmod", "+x", "rustup-installer.sh"])
 
         say("")
@@ -182,12 +182,17 @@ def require_rust_stuff():
         complain_about_tool_then_die("rustup")
 
 
+class Provisioner(Protocol):
+    def __call__(self, localdir: Path, version: str) -> None:
+        """Provision the given version of the software into the given localdir."""
+
+
 def want_generic(
     keyname: str,
     lowername: str,
     titlename: str,
     by: CheckDepBy,
-    provisioner: Callable[[Path, str], None],
+    provisioner: Provisioner,
 ):
     match HAVE.compatible(keyname, by):
         case InstallationState.VERSION_OK:
@@ -199,13 +204,11 @@ def want_generic(
             provisioner(HAVE.localdir, version=WANT[keyname])
 
 
-def want_version_generic(
-    keyname: str, lowername: str, titlename: str, provisioner: Callable[[Path, str], None]
-):
+def want_version_generic(keyname: str, lowername: str, titlename: str, provisioner: Provisioner):
     want_generic(keyname, lowername, titlename, CheckDepBy.VERSION, provisioner)
 
 
-def want_cmake():
+def want_cmake() -> None:
     want_version_generic("10j-cmake", "cmake", "CMake", provision_cmake_into)
     out: bytes = hermetic.run_shell_cmd("cmake --version", check=True, capture_output=True).stdout
     outstr = out.decode("utf-8")
@@ -416,9 +419,9 @@ def provision_opam_binary_into(opam_version: str, localdir: Path) -> None:
     subprocess.check_call(["sh", installer_sh, "--download-only", "--version", opam_version])
     tagged = list(Path(".").glob(f"opam-{opam_version}-*"))
     assert len(tagged) == 1
-    tagged = tagged[0]
-    subprocess.check_call(["chmod", "+x", tagged])
-    tagged.replace(localdir / "opam")
+    tagged_path = tagged[0]
+    subprocess.check_call(["chmod", "+x", tagged_path])
+    tagged_path.replace(localdir / "opam")
 
     if hermetic.running_in_ci():
         dotlocalbin = Path.home() / ".local" / "bin"
@@ -771,7 +774,7 @@ def download_and_extract_tarball(
         temp_file = os.path.basename(urlparse(tarball_url).path)
 
         say(f"Downloading {tarball_url}...")
-        download(tarball_url, temp_file)
+        download(tarball_url, Path(temp_file))
     except Exception:
         # Clean up any temporary files if they exist
         if os.path.exists(temp_file):
