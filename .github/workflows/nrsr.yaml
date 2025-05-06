@@ -56,9 +56,6 @@ jobs:
       - name: Build c2rust binaries
         run: cd c2rust && ../cli/10j cargo build --locked --release $C2RUST_TESTED_CRATES
 
-      - name: fail, to prevent caching +nightly
-        run: exit 1
-
   not-rocket-science-rs-lint:
     runs-on: ubuntu-latest
     steps:
