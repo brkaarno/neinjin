@@ -110,16 +110,11 @@ unsafe fn marshal_result(result: *const ffi::ExportResult) -> HashMap<String, Ve
         let name = cname.to_str().unwrap().to_owned();
 
         // Convert CBOR bytes
-        let csize = *res.sizes.offset(i);
+        let csize = *res.sizes.offset(i) as u64;
         let cbytes = *res.bytes.offset(i);
-
-        #[cfg(target_pointer_width = "64")]
-        let csize_usize: usize = csize;
-
-        #[cfg(not(target_pointer_width = "64"))]
         let csize_usize: usize = csize
             .try_into()
-            .expect("csize too large for usize on 32-bit");
+            .expect("c2rust-ast-exporter(cbor): csize too large for usize!");
 
         let bytes = slice::from_raw_parts(cbytes, csize_usize);
         let mut v = Vec::new();
