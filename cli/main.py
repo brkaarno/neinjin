@@ -70,19 +70,6 @@ def do_check_deps(report: bool):
         hermetic.check_call_uv("tool list".split())
 
 
-def trim_empty_marker(z: str) -> str:
-    return z.stripprefix("z-")
-
-
-def path_bytes_to_str(b: bytes) -> str:
-    """Convert a file path byte string to printable text."""
-    try:
-        return b.decode("utf-8")
-    except UnicodeDecodeError:
-        # Fall back to alternative encoding or filesystem encoding
-        return b.decode(os.fsdecode.encoding, errors="replace")
-
-
 def do_fmt_py():
     hermetic.check_call_uv("run ruff format".split())
 
@@ -98,20 +85,19 @@ def do_check_py():
 
 def do_fmt_rs():
     root = repo_root.find_repo_root_dir_Path()
-    hermetic.run_shell_cmd(f"cd {root / 'c2rust'} && cargo +stable fmt", check=True)
+    hermetic.run_cargo_in(["fmt"], cwd=root / "c2rust", check=True)
 
 
 def do_check_rs_fmt():
     root = repo_root.find_repo_root_dir_Path()
-    hermetic.run_shell_cmd(f"cd {root / 'c2rust'} && cargo +stable fmt -- --check", check=True)
+    hermetic.run_cargo_in(["fmt", "--", "--check"], cwd=root / "c2rust", check=True)
 
 
 def do_check_rs():
     root = repo_root.find_repo_root_dir_Path()
-    hermetic.run_shell_cmd(
-        f"cd {root / 'c2rust'} && cargo +stable clippy --locked"
-        " -p c2rust -p c2rust-transpile"
-        " -- -Aclippy::needless_lifetimes",
+    hermetic.run_cargo_in(
+        "clippy --locked -p c2rust -p c2rust-transpile -- -Aclippy::needless_lifetimes".split(),
+        cwd=root / "c2rust",
         check=True,
     )
     # do_check_rs_fmt()  # c2rust is not yet fmt-clean, will tackle later
@@ -119,8 +105,9 @@ def do_check_rs():
 
 def do_test_unit_rs():
     root = repo_root.find_repo_root_dir_Path()
-    hermetic.run_shell_cmd(
-        f"cd {root / 'c2rust'} && cargo +stable test --locked -p c2rust -p c2rust-transpile",
+    hermetic.run_cargo_in(
+        "test --locked -p c2rust -p c2rust-transpile".split(),
+        cwd=root / "c2rust",
         check=True,
     )
 
@@ -149,21 +136,24 @@ def do_check_repo_file_sizes() -> bool:
         "-path", rootdir / "_local",
     ]
     cmd = [
-        "find", rootdir, "(", *exclusions, ")", "-prune", "-o",
+        "find", str(rootdir), "(", *[str(x) for x in exclusions], ")", "-prune", "-o",
             "-type", "f", "-size", f"+{max_file_size}c", "-print",
     ]
     # fmt: on
     lines = subprocess.check_output(cmd, stderr=subprocess.PIPE).split(b"\n")
-    lines = [line for line in lines if line != b""]
-    if not lines:
+    strlines = [os.fsdecode(line) for line in lines if line != b""]
+    if not strlines:
         return True
 
     # See https://git-scm.org/docs/git-check-ignore for details of the output format.
     # We don't check the return value because it is non-zero when no path is ignored,
     # which is not an error case in this context.
-    lines = hermetic.run_output_git(["check-ignore", "--verbose", "--non-matching", *lines]).split(
-        b"\n"
-    )
+    lines = hermetic.run_output_git([
+        "check-ignore",
+        "--verbose",
+        "--non-matching",
+        *strlines,
+    ]).split(b"\n")
     non_ignored = []
     for line in lines:
         if line == b"":
@@ -181,7 +171,7 @@ def do_check_repo_file_sizes() -> bool:
 
     click.echo("ERROR: Unexpected large files:", err=True)
     for line in non_ignored:
-        click.echo("\t" + path_bytes_to_str(line), err=True)
+        click.echo("\t" + os.fsdecode(line), err=True)
     return False
 
 
@@ -300,7 +290,7 @@ if __name__ == "__main__":
         if sys.argv[1] == "dune":
             sys.exit(hermetic.run_opam(["exec", "--", "dune", *sys.argv[2:]]).returncode)
         if sys.argv[1] == "cargo":
-            sys.exit(hermetic.run_shell_cmd(sys.argv[1:]).returncode)
+            sys.exit(hermetic.run_cargo_in(sys.argv[2:], cwd=None, check=False).returncode)
         if sys.argv[1] == "exec":
             sys.exit(hermetic.run_shell_cmd(sys.argv[2:]).returncode)
         if sys.argv[1] == "true":
