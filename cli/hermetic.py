@@ -104,7 +104,7 @@ def run_shell_cmd(
 
 
 def cargo_toolchain_specifier() -> str:
-    return "+stable"
+    return "+nightly"
 
 
 def cargo_rpath_args() -> list[str]:
