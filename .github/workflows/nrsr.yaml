@@ -48,19 +48,7 @@ jobs:
         run: sh cli/sh/provision.sh rust
 
       - name: Build c2rust tests
-        run: cd c2rust && RUSTFLAGS="--print link-args" ../cli/10j cargo test --locked --release $C2RUST_TESTED_CRATES --no-run
-
-      - run: python3 -c 'import platform; print(platform.version())'
-
-      - name: Dbg c2rust unit tests
-        if: ${{ startsWith(matrix.runner, 'macos-') }}
-        run: cd c2rust && otool -l target/*/deps/c2rust_transpile-*
-        
-      - name: Run c2rust unit tests with DYLD_LIBRARY_PATH
-        run: cd c2rust && DYLD_LIBRARY_PATH=$PWD/../_local/xj-llvm/lib ../cli/10j cargo test --locked --release $C2RUST_TESTED_CRATES
-
-      - name: Run c2rust unit tests with LD_LIBRARY_PATH
-        run: cd c2rust && LD_LIBRARY_PATH=$PWD/../_local/xj-llvm/lib ../cli/10j cargo test --locked --release $C2RUST_TESTED_CRATES
+        run: cd c2rust && ../cli/10j cargo test --locked --release $C2RUST_TESTED_CRATES --no-run
 
       - name: Run c2rust unit tests
         run: cd c2rust && ../cli/10j cargo test --locked --release $C2RUST_TESTED_CRATES

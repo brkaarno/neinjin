@@ -104,10 +104,10 @@ def run_shell_cmd(
 
 
 def cargo_toolchain_specifier() -> str:
-    return "+nightly"
+    return "+stable"
 
 
-def cargo_rpath_args() -> list[str]:
+def cargo_encoded_rustflags_env_ext() -> dict:
     # We need this to get Cargo to build executables and tests (which, on
     # macOS, end up linking to libclang-cpp.dylib) with an embedded rpath
     # entry that allows the running binary to find our LLVM library.
@@ -117,19 +117,31 @@ def cargo_rpath_args() -> list[str]:
     # does the build and run all in one step. The downside of what we do here
     # is that the binaries are not relocatable between machines, which will
     # have differing paths for repo_root.localdir().
+    #
+    # Per https://doc.rust-lang.org/cargo/reference/config.html#buildrustflags
+    # we cannot reliably use --config because RUSTFLAGS takes precedence and
+    # settings are not merged. So we look up the value of RUSTFLAGS, if any,
+    # and add it to CARGO_ENCODED_RUSTFLAGS, which takes precedence over
+    # RUSTFLAGS itself.
     llvm_lib_dir = xj_llvm_root(repo_root.localdir()) / "lib"
-    return ["--config", f'build.rustflags = [ "-C" , "link-args=-Wl,-rpath,{llvm_lib_dir}" ]']
+
+    rustflags = os.environ.get("RUSTFLAGS", "")
+    rustflags_parts = rustflags.split()
+    rustflags_parts.extend(["-C", f"link-args=-Wl,-rpath,{llvm_lib_dir}"])
+    return {
+        "CARGO_ENCODED_RUSTFLAGS": b"\x1f".join(x.encode("utf-8") for x in rustflags_parts),
+    }
 
 
 def run_cargo_in(
     args: list[str], cwd: Path | None, check=True, **kwargs
 ) -> subprocess.CompletedProcess:
     return run(
-        ["cargo", cargo_toolchain_specifier(), *cargo_rpath_args(), *args],
+        ["cargo", cargo_toolchain_specifier(), *args],
         cwd=cwd,
         check=check,
         with_tenjin_deps=True,
-        env_ext=None,
+        env_ext=cargo_encoded_rustflags_env_ext(),
         **kwargs,
     )
 
