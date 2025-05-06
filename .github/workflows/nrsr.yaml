@@ -48,13 +48,13 @@ jobs:
         run: sh cli/sh/provision.sh rust
 
       - name: Build c2rust tests
-        run: cd c2rust && ../cli/10j cargo +stable test --locked --release $C2RUST_TESTED_CRATES --no-run
+        run: cd c2rust && ../cli/10j cargo test --locked --release $C2RUST_TESTED_CRATES --no-run
 
       - name: Run c2rust unit tests
-        run: cd c2rust && ../cli/10j cargo +stable test --locked --release $C2RUST_TESTED_CRATES
+        run: cd c2rust && ../cli/10j cargo test --locked --release $C2RUST_TESTED_CRATES
 
       - name: Build c2rust binaries
-        run: cd c2rust && ../cli/10j cargo +stable build --locked --release $C2RUST_TESTED_CRATES
+        run: cd c2rust && ../cli/10j cargo build --locked --release $C2RUST_TESTED_CRATES
 
   not-rocket-science-rs-lint:
     runs-on: ubuntu-latest
