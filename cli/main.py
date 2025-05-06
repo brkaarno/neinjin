@@ -79,7 +79,9 @@ def do_check_py_fmt():
 
 
 def do_check_py():
+    root = repo_root.find_repo_root_dir_Path()
     hermetic.check_call_uv("run ruff check --quiet".split())
+    hermetic.check_call_uv(["run", "mypy", root / "cli" / "main.py", root / "cli" / "constants.py"])
     do_check_py_fmt()
 
 
