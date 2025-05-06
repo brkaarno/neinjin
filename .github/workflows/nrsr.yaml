@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-latest, macos-latest]
+        runner: [ubuntu-latest, macos-13, macos-14, macos-15]
     runs-on: ${{ matrix.runner }}
     env:
       C2RUST_TESTED_CRATES: "-p c2rust -p c2rust-transpile -p c2rust-ast-printer"
@@ -49,6 +49,17 @@ jobs:
 
       - name: Build c2rust tests
         run: cd c2rust && ../cli/10j cargo test --locked --release $C2RUST_TESTED_CRATES --no-run
+
+      - run: python3 -c 'import platform; print(platform.version())'
+
+      - name: Dbg c2rust unit tests
+        run: cd c2rust && otool -l target/*/deps/c2rust_transpile-*
+        
+      - name: Run c2rust unit tests with DYLD_LIBRARY_PATH
+        run: cd c2rust && DYLD_LIBRARY_PATH=$PWD/../_local/xj-llvm/lib ../cli/10j cargo test --locked --release $C2RUST_TESTED_CRATES
+
+      - name: Run c2rust unit tests with LD_LIBRARY_PATH
+        run: cd c2rust && LD_LIBRARY_PATH=$PWD/../_local/xj-llvm/lib ../cli/10j cargo test --locked --release $C2RUST_TESTED_CRATES
 
       - name: Run c2rust unit tests
         run: cd c2rust && ../cli/10j cargo test --locked --release $C2RUST_TESTED_CRATES
