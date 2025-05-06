@@ -30,7 +30,11 @@ jobs:
         run: cli/10j check-py
 
   not-rocket-science-rs-test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.runner }}
     env:
       C2RUST_TESTED_CRATES: "-p c2rust -p c2rust-transpile -p c2rust-ast-printer"
     steps:
