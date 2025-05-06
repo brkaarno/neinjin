@@ -112,7 +112,14 @@ unsafe fn marshal_result(result: *const ffi::ExportResult) -> HashMap<String, Ve
         // Convert CBOR bytes
         let csize = *res.sizes.offset(i);
         let cbytes = *res.bytes.offset(i);
-        let bytes = slice::from_raw_parts(cbytes, csize.try_into().unwrap());
+
+        #[cfg(target_pointer_width = "64")]
+        let csize_usize = csize as usize;
+
+        #[cfg(not(target_pointer_width = "64"))]
+        let csize_usize = csize.try_into().expect("csize too large for usize on 32-bit");
+
+        let bytes = slice::from_raw_parts(cbytes, csize_usize);
         let mut v = Vec::new();
         v.extend_from_slice(bytes);
 
