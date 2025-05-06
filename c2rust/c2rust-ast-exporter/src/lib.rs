@@ -114,7 +114,7 @@ unsafe fn marshal_result(result: *const ffi::ExportResult) -> HashMap<String, Ve
         let cbytes = *res.bytes.offset(i);
 
         #[cfg(target_pointer_width = "64")]
-        let csize_usize = csize as usize;
+        let csize_usize = csize;
 
         #[cfg(not(target_pointer_width = "64"))]
         let csize_usize = csize.try_into().expect("csize too large for usize on 32-bit");
