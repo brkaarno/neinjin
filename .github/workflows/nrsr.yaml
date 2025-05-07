@@ -2,7 +2,7 @@ name: not-rocket-science
 
 on:
   push:
-    branches: [ "test/**", "with-c2rust" ]
+    branches: [ "test/**" ]
   pull_request:
     branches: [ "main" ]
 
