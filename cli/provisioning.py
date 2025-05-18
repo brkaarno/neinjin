@@ -1,6 +1,7 @@
 from pathlib import Path
 import platform
 import os
+import tempfile
 import tarfile
 import shutil
 import subprocess
@@ -346,21 +347,7 @@ def provision_ocaml(ocaml_version: str):
             if opamroot.is_dir():
                 shutil.rmtree(opamroot)
 
-        # Bubblewrap does not work inside Docker containers, at least not without
-        # heinous workarounds, if we're in Docker then we don't really need it anyway.
-        # So we'll try running a trivial command with it; if it fails, we'll tell opam
-        # not to use it.
-        sandboxing_arg = []
-        if platform.system() == "Linux":
-            try:
-                subprocess.check_call([
-                    hermetic.xj_build_deps(localdir) / "bin" / "bwrap",
-                    "--",
-                    "true",
-                ])
-            except subprocess.CalledProcessError:
-                say("Oh! No working bubblewrap. We're in Docker, maybe? Disabling it...")
-                sandboxing_arg = ["--disable-sandboxing"]
+        sandboxing_arg = infer_bwrap_sandboxing_args(localdir)
 
         cp = hermetic.run_opam(["config", "report"], eval_opam_env=False, capture_output=True)
         if b"please run `opam init'" in cp.stderr:
@@ -487,6 +474,53 @@ def provision_dune_into(_localdir: Path, version: str):
     provision_dune(version)
 
     HAVE.note_we_have("10j-dune", version=Version(grab_dune_version_str()))
+
+
+def infer_bwrap_sandboxing_args(localdir: Path) -> list[str]:
+    if platform.system() != "Linux":
+        return []  # bwrap is Linux-only
+
+    bwrap_path = hermetic.xj_build_deps(localdir) / "bin" / "bwrap"
+    if not bwrap_path.is_file():
+        return ["--disable-sandboxing"]  # no bwrap, no sandboxing
+
+    # Bubblewrap does not work inside Docker containers, at least not without
+    # heinous workarounds, if we're in Docker then we don't really need it anyway.
+    # So we'll try running a trivial command with it; if it fails, we'll tell opam
+    # not to use it.
+    #
+    # We really want to run a statically linked binary, since
+    # for a dynamically linked binary we'd need to add symlinks
+    # for whatever libraries it needs, which can be platform-dependent.
+    # But which binaries are statically linked will vary by distro.
+    # So we'll compile one ourselves.
+    tru_c_src = "int main() { return 0; }"
+    binary_path = Path.cwd() / "tru"
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".c", mode="w", encoding="utf-8", delete=False
+    ) as temp_c_file:
+        temp_c_file.write(tru_c_src)
+        temp_c_file_path = temp_c_file.name
+
+    try:
+        compile_cmd = ["clang", temp_c_file_path, "-static", "-o", str(binary_path)]
+        hermetic.run_shell_cmd(compile_cmd, check=True)
+        os.chmod(binary_path, 0o755)
+
+        subprocess.check_call([bwrap_path, "--ro-bind", Path.cwd(), "/", "/tru"])
+    except subprocess.CalledProcessError as e:
+        print(f"Compilation failed with error: {e.stderr}")
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+    else:
+        return []  # do not disable sandboxing
+    finally:
+        Path(temp_c_file_path).unlink(missing_ok=True)
+        binary_path.unlink(missing_ok=True)
+
+    # If we reach here, it means we didn't return on the happy path
+    return ["--disable-sandboxing"]
 
 
 # Precondition: not installed, or version too old.
