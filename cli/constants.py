@@ -6,8 +6,12 @@ WANT = {
     "10j-dune": "3.18.0",
     "10j-ocaml": "5.2.0",
     "10j-cmake": "3.31.7",
-    "10j-build-deps_Linux-x86_64": "dda1346ffbb6835aeb2e29bd0acf5b1a4d81c4b9eb011a669a61436f1e75a3ee",
+    "10j-bullseye-sysroot-extras": "rev_a7d3134af55e3",
+    "10j-build-deps": "rev_a7d3134af55e3",
 }
+
+# Subdirectory of hermetic.xj_llvm_root()
+SYSROOT_NAME = "sysroot"
 
 if __name__ == "__main__":
     # This is a separate script from provisioning.py so that it can be run

@@ -17,7 +17,7 @@ import click
 import repo_root
 import hermetic
 from sha256sum import compute_sha256
-from constants import WANT
+from constants import WANT, SYSROOT_NAME
 
 
 class InstallationState(enum.Enum):
@@ -28,7 +28,7 @@ class InstallationState(enum.Enum):
 
 class CheckDepBy(enum.Enum):
     VERSION = 0
-    SHA256 = 1
+    EXACT_MATCH = 1
 
 
 class TrackingWhatWeHave:
@@ -44,17 +44,17 @@ class TrackingWhatWeHave:
         with open(Path(self.localdir, "config.10j-HAVE.json"), "w", encoding="utf-8") as f:
             json.dump(self._have, f, indent=2, sort_keys=True)
 
-    def note_we_have(self, name: str, version: Version | None = None, sha256hex: str | None = None):
-        match [version is None, sha256hex is None]:
+    def note_we_have(self, name: str, version: Version | None = None, specifier: str | None = None):
+        match [version is None, specifier is None]:
             case [True, True]:
-                raise ValueError(f"For '{name}' must provide either version or sha256hex")
+                raise ValueError(f"For '{name}' must provide either version or specifier")
             case [False, False]:
-                raise ValueError(f"For '{name}' must provide either version or sha256hex, not both")
+                raise ValueError(f"For '{name}' must provide either version or specifier, not both")
             case _:
                 pass
 
         had = self._have.get(name)
-        now = str(version) if version else sha256hex
+        now = str(version) if version else specifier
         self._have[name] = now
         if had != now:
             self.save()
@@ -73,7 +73,7 @@ class TrackingWhatWeHave:
             case CheckDepBy.VERSION:
                 if Version(self._have[name]) >= Version(wanted_spec):
                     return InstallationState.VERSION_OK
-            case CheckDepBy.SHA256:
+            case CheckDepBy.EXACT_MATCH:
                 if self._have[name] == wanted_spec:
                     return InstallationState.VERSION_OK
 
@@ -111,6 +111,8 @@ def provision_desires(wanted: str):
     if wanted in ("all", "rust"):
         require_rust_stuff()
 
+    # Wanting it all but lacking dune means this is a first-time install,
+    # so give a heads up about what it will involve.
     if wanted == "all" and HAVE.query("10j-dune") is None:
 
         def say(msg: str):
@@ -125,6 +127,7 @@ def provision_desires(wanted: str):
     # projects in those languages) end up needing them.
     want_10j_deps()
     want_10j_llvm()
+    want_10j_sysroot_extras()
     want_cmake()
 
     if wanted in ("all", "ocaml"):
@@ -244,19 +247,61 @@ def want_10j_llvm():
     HAVE.note_we_have("10j-llvm", version=Version(out.decode("utf-8")))
 
 
+def want_10j_sysroot_extras():
+    if platform.system() != "Linux":
+        return
+
+    key = "10j-bullseye-sysroot-extras"
+
+    def provision_10j_sysroot_extras_into(localdir: Path, version: str):
+        filename = f"xj-bullseye-sysroot-extras_{platform.machine()}.tar.xz"
+        url = (
+            f"https://github.com/brkaarno/xj-build-deps-test/releases/download/{version}/{filename}"
+        )
+
+        tarball = hermetic.xj_llvm_root(localdir) / filename
+        download(url, tarball)
+
+        tmp_dest = hermetic.xj_llvm_root(localdir) / "tmp"
+        tmp_dest.mkdir()
+
+        shutil.unpack_archive(tarball, tmp_dest, filter="tar")
+        tarball.unlink()
+
+        triple = f"{platform.machine()}-linux-gnu"
+        shutil.copytree(
+            tmp_dest / "debian-bullseye_gcc_glibc" / platform.machine() / "usr_lib",
+            hermetic.xj_llvm_root(localdir) / "sysroot" / "usr" / "lib" / triple,
+            dirs_exist_ok=True,
+        )
+
+        # We need the .a files to enable static linking for our hermetic clang.
+        shutil.copytree(
+            tmp_dest / "debian-bullseye_gcc_glibc" / platform.machine() / "usr_lib_gcc",
+            hermetic.xj_llvm_root(localdir) / "sysroot" / "usr" / "lib" / "gcc" / triple / "10",
+            dirs_exist_ok=True,
+        )
+
+        shutil.rmtree(tmp_dest)
+
+        HAVE.note_we_have(key, specifier=version)
+
+    want_version_generic(key, "sysroot-extras", "sysroot-extras", provision_10j_sysroot_extras_into)
+
+
 def want_10j_deps():
     if platform.system() == "Darwin":
         return
 
-    key = f"10j-build-deps_{platform.system()}-{platform.machine()}"
+    key = "10j-build-deps"
     want_generic(
         key,
         "10j-build-deps",
         "Tenjin build deps",
-        CheckDepBy.SHA256,
+        CheckDepBy.EXACT_MATCH,
         provision_10j_deps_into,
     )
-    HAVE.note_we_have(key, sha256hex=WANT[key])
+    HAVE.note_we_have(key, specifier=WANT[key])
 
 
 # Prerequisite: opam provisioned.
@@ -368,7 +413,7 @@ def provision_debian_bullseye_sysroot_into(target_arch: str, dest_sysroot: Path)
     def say(msg: str):
         sez(msg, ctx="(sysroot) ")
 
-    say("Downloading and unpacking sysroot tarball...")
+    say("Downloading and unpacking sysroot tarball, will take maybe 10 s...")
 
     CHROME_LINUX_SYSROOT_URL = "https://commondatastorage.googleapis.com/chrome-linux-sysroot"
 
@@ -500,7 +545,7 @@ def provision_cmake_into(localdir: Path, version: str):
                 )
 
     cmake_dir = localdir / "cmake"
-    download_and_extract_tarball(mk_url(), cmake_dir, ctx="(cmake) ", time_estimate="a minute")
+    download_and_extract_tarball(mk_url(), cmake_dir, ctx="(cmake) ", time_estimate=None)
 
     if platform.system() == "Darwin" and (cmake_dir / "CMake.app").is_dir():
         # The tarball for macOS contains a .app bundle; we'll make a symlink
@@ -536,9 +581,9 @@ def provision_10j_llvm_into(localdir: Path, version: str):
                         """)
                 )
 
-    def provision_debian_sysroot(sysroot_name: str):
+    def provision_debian_sysroot():
         provision_debian_bullseye_sysroot_into(
-            platform.machine(), hermetic.xj_llvm_root(localdir) / sysroot_name
+            platform.machine(), hermetic.xj_llvm_root(localdir) / SYSROOT_NAME
         )
 
         #                   COMMENTARY(goblint-cil-gcc-wrapper)
@@ -621,9 +666,8 @@ def provision_10j_llvm_into(localdir: Path, version: str):
 
     match platform.system():
         case "Linux":
-            sysroot_name = "sysroot"
-            provision_debian_sysroot(sysroot_name)
-            provision_clang_config_files(sysroot_path=f"<CFGDIR>/../{sysroot_name}")
+            provision_debian_sysroot()
+            provision_clang_config_files(sysroot_path=f"<CFGDIR>/../{SYSROOT_NAME}")
         case "Darwin":
             xcrun_path = (
                 subprocess.check_output(["xcrun", "--show-sdk-path"]).decode("utf-8").strip()
@@ -716,20 +760,18 @@ def cook_pkg_config_within(localdir: Path):
 
 
 def provision_10j_deps_into(localdir: Path, version: str):
-    match [platform.system(), platform.machine()]:
-        case ["Linux", "x86_64"]:
-            url = "https://images.aarno-labs.com/amp/ben/xj-build-deps_linux-x86_64.tar.xz"
+    match platform.system():
+        case "Linux":
+            filename = f"xj-build-deps_{platform.machine()}.tar.xz"
+            url = f"https://github.com/brkaarno/xj-build-deps-test/releases/download/{version}/{filename}"
             download_and_extract_tarball(
                 url,
                 hermetic.xj_build_deps(localdir),
                 ctx="(builddeps) ",
                 time_estimate="a jiffy",
-                required_sha256sum=version,
             )
 
-            cook_pkg_config_within(localdir)
-
-        case ["Darwin", _]:
+        case "Darwin":
             # For macOS, we don't do hermetic build deps; instead, we rely on homebrew.
             # This bypasses the need to cook pkg-config, because it will have hardcoded
             # paths that are suitable for interoperation with homebrew.
@@ -754,7 +796,6 @@ def download_and_extract_tarball(
     target_dir: Path,
     ctx: str,
     time_estimate="a few seconds",
-    required_sha256sum: str | None = None,
 ) -> None:
     """
     Downloads a compressed tar file from the given URL and extracts it to the target directory.
@@ -767,7 +808,8 @@ def download_and_extract_tarball(
     def say(msg: str):
         sez(msg, ctx)
 
-    say(f"This will take {time_estimate}...")
+    if time_estimate:
+        say(f"This will take {time_estimate}...")
 
     try:
         # Create a temporary file name for the download
@@ -780,12 +822,6 @@ def download_and_extract_tarball(
         if os.path.exists(temp_file):
             os.remove(temp_file)
         raise
-
-    if required_sha256sum is not None:
-        # Verify the SHA256 checksum
-        sha256sum = compute_sha256(temp_file)
-        if sha256sum != required_sha256sum:
-            raise ProvisioningError(f"SHA256 checksum verification failed for {temp_file}!")
 
     extract_tarball(Path(temp_file), target_dir, ctx, None)
 
