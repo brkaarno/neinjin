@@ -198,6 +198,14 @@ def require_rust_stuff():
     if shutil.which("rustup") is None:
         complain_about_tool_then_die("rustup")
 
+    # The rustup.sh installer defaults to the 'default' profile, which provides clippy,
+    # but the 'minimal' profile (as used in official Rust docker images) does not.
+    # The easiest thing to do is unconditionally add the clippy component to stable.
+    # This will also download stable if it is not already installed.
+    subprocess.check_call(
+        ["rustup", "component", "add", "--toolchain", "stable", "clippy", "rustfmt", "rustc-dev"],
+    )
+
 
 class Provisioner(Protocol):
     def __call__(self, localdir: Path, version: str) -> None:
