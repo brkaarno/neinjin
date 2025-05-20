@@ -101,7 +101,20 @@ def download(url: str, filename: Path) -> None:
 
 
 # platform.system() in ["Linux", "Darwin"]
-# platform.machine() in ["x86_64", "arm64"]
+
+
+# See https://stackoverflow.com/questions/45125516/possible-values-for-uname-m
+# See https://gist.github.com/skyzyx/d82b7d9ba05523dd1a9301fd282b32c4
+def machine_normalized(aarch64="aarch64") -> str:
+    x: dict[str, str] = {}
+    for src in "arm64 arm64v8 arm64v9 armv8b armv8l aarch64_be aarch64".split():
+        x[src] = aarch64
+
+    for src in "amd64 AMD64 x64 x86_64".split():
+        x[src] = "x86_64"
+
+    m = platform.machine()
+    return x.get(m, m)
 
 
 def provision_desires(wanted: str):
@@ -255,10 +268,8 @@ def want_10j_sysroot_extras():
     key = "10j-bullseye-sysroot-extras"
 
     def provision_10j_sysroot_extras_into(localdir: Path, version: str):
-        filename = f"xj-bullseye-sysroot-extras_{platform.machine()}.tar.xz"
-        url = (
-            f"https://github.com/brkaarno/xj-build-deps-test/releases/download/{version}/{filename}"
-        )
+        filename = f"xj-bullseye-sysroot-extras_{machine_normalized()}.tar.xz"
+        url = f"https://github.com/Aarno-Labs/tenjin-build-deps/releases/download/{version}/{filename}"
 
         tarball = hermetic.xj_llvm_root(localdir) / filename
         download(url, tarball)
@@ -269,16 +280,18 @@ def want_10j_sysroot_extras():
         shutil.unpack_archive(tarball, tmp_dest, filter="tar")
         tarball.unlink()
 
+        # We use non-normalized platform.machine() here because we want to match
+        # the (non-normalized) Linux native naming convention.
         triple = f"{platform.machine()}-linux-gnu"
         shutil.copytree(
-            tmp_dest / "debian-bullseye_gcc_glibc" / platform.machine() / "usr_lib",
+            tmp_dest / "debian-bullseye_gcc_glibc" / machine_normalized() / "usr_lib",
             hermetic.xj_llvm_root(localdir) / "sysroot" / "usr" / "lib" / triple,
             dirs_exist_ok=True,
         )
 
         # We need the .a files to enable static linking for our hermetic clang.
         shutil.copytree(
-            tmp_dest / "debian-bullseye_gcc_glibc" / platform.machine() / "usr_lib_gcc",
+            tmp_dest / "debian-bullseye_gcc_glibc" / machine_normalized() / "usr_lib_gcc",
             hermetic.xj_llvm_root(localdir) / "sysroot" / "usr" / "lib" / "gcc" / triple / "10",
             dirs_exist_ok=True,
         )
@@ -287,7 +300,13 @@ def want_10j_sysroot_extras():
 
         HAVE.note_we_have(key, specifier=version)
 
-    want_version_generic(key, "sysroot-extras", "sysroot-extras", provision_10j_sysroot_extras_into)
+    want_generic(
+        key,
+        "sysroot-extras",
+        "sysroot-extras",
+        CheckDepBy.EXACT_MATCH,
+        provision_10j_sysroot_extras_into,
+    )
 
 
 def want_10j_deps():
@@ -396,7 +415,7 @@ def provision_ocaml(ocaml_version: str):
     install_ocaml(HAVE.localdir)
 
 
-def provision_debian_bullseye_sysroot_into(target_arch: str, dest_sysroot: Path):
+def provision_debian_bullseye_sysroot_into(dest_sysroot: Path):
     def say(msg: str):
         sez(msg, ctx="(sysroot) ")
 
@@ -408,10 +427,10 @@ def provision_debian_bullseye_sysroot_into(target_arch: str, dest_sysroot: Path)
     # we don't expect to need a new version, ever.
     DEBIAN_BULLSEYE_SYSROOT_SHA256SUMS = {
         "x86_64": "36a164623d03f525e3dfb783a5e9b8a00e98e1ddd2b5cff4e449bd016dd27e50",
-        "arm64": "2f915d821eec27515c0c6d21b69898e23762908d8d7ccc1aa2a8f5f25e8b7e18",
+        "aarch64": "2f915d821eec27515c0c6d21b69898e23762908d8d7ccc1aa2a8f5f25e8b7e18",
         "armhf": "47b3a0b161ca011b2b33d4fc1ef6ef269b8208a0b7e4c900700c345acdfd1814",
     }
-    tarball_sha256sum = DEBIAN_BULLSEYE_SYSROOT_SHA256SUMS[target_arch]
+    tarball_sha256sum = DEBIAN_BULLSEYE_SYSROOT_SHA256SUMS[machine_normalized()]
 
     url = CHROME_LINUX_SYSROOT_URL + "/" + tarball_sha256sum
 
@@ -566,10 +585,10 @@ def provision_cmake_into(localdir: Path, version: str):
         return f"https://github.com/Kitware/CMake/releases/download/v{version}/cmake-{version}-{tag}.tar.gz"
 
     def mk_url() -> str:
-        match [platform.system(), platform.machine()]:
+        match [platform.system(), machine_normalized()]:
             case ["Linux", "x86_64"]:
                 return fmt_url("linux-x86_64")
-            case ["Linux", "arm64"]:
+            case ["Linux", "aarch64"]:
                 return fmt_url("linux-aarch64")
             case ["Darwin", _]:
                 return fmt_url("macos-universal")
@@ -616,9 +635,7 @@ def provision_10j_llvm_into(localdir: Path, version: str):
                 )
 
     def provision_debian_sysroot():
-        provision_debian_bullseye_sysroot_into(
-            platform.machine(), hermetic.xj_llvm_root(localdir) / SYSROOT_NAME
-        )
+        provision_debian_bullseye_sysroot_into(hermetic.xj_llvm_root(localdir) / SYSROOT_NAME)
 
         #                   COMMENTARY(goblint-cil-gcc-wrapper)
         # Okay, this one is unfortunate. We generally only care about software that
@@ -684,7 +701,7 @@ def provision_10j_llvm_into(localdir: Path, version: str):
             if not dst.is_symlink():
                 os.symlink(src, dst)
 
-    tarball_name = f"LLVM-{version}-{platform.system()}-{platform.machine()}.tar.xz"
+    tarball_name = f"LLVM-{version}-{platform.system()}-{machine_normalized()}.tar.xz"
     if Path(tarball_name).is_file():
         extract_tarball(
             Path(tarball_name),
@@ -796,8 +813,8 @@ def cook_pkg_config_within(localdir: Path):
 def provision_10j_deps_into(localdir: Path, version: str):
     match platform.system():
         case "Linux":
-            filename = f"xj-build-deps_{platform.machine()}.tar.xz"
-            url = f"https://github.com/brkaarno/xj-build-deps-test/releases/download/{version}/{filename}"
+            filename = f"xj-build-deps_{machine_normalized()}.tar.xz"
+            url = f"https://github.com/Aarno-Labs/tenjin-build-deps/releases/download/{version}/{filename}"
             download_and_extract_tarball(
                 url,
                 hermetic.xj_build_deps(localdir),
@@ -945,10 +962,13 @@ def extract_tarball(
 
     # For example, we have foo-bar.tar.gz, and unpack it into blah/;
     #   then if we find blah/foo-bar/, we trim out the foo-bar part.
-
-    if list(final_target_dir.iterdir()) == [final_target_dir / tarball_basename]:
-        extracted_path = final_target_dir / tarball_basename
-        # If the tarball unpacks a single directory, move its contents up a level
+    final_dir_contents = list(final_target_dir.iterdir())
+    replicated_tarball_name = final_dir_contents == [final_target_dir / tarball_basename]
+    # Likewise, if we find blah/blah/, we trim out the middle blah part.
+    replicated_target_basename = final_dir_contents == [final_target_dir / final_target_dir.name]
+    if replicated_tarball_name or replicated_target_basename:
+        extracted_path = final_dir_contents[0]
+        # The tarball unpacks a single directory, so move its contents up a level
         for item in extracted_path.iterdir():
             shutil.move(str(item), str(final_target_dir))
 

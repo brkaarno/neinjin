@@ -6,8 +6,8 @@ WANT = {
     "10j-dune": "3.18.0",
     "10j-ocaml": "5.2.0",
     "10j-cmake": "3.31.7",
-    "10j-bullseye-sysroot-extras": "rev_a7d3134af55e3",
-    "10j-build-deps": "rev_a7d3134af55e3",
+    "10j-bullseye-sysroot-extras": "rev-03d4672c4",
+    "10j-build-deps": "rev-03d4672c4",
 }
 
 # Subdirectory of hermetic.xj_llvm_root()
