@@ -630,7 +630,7 @@ def provision_10j_llvm_into(localdir: Path, version: str):
                     # To avoid this outcome, we forcibly add the within-sysroot path
                     # to take precedence over the external system path.
                     -L <CFGDIR>/../sysroot/usr/lib/{platform.machine()}-linux-gnu/
-                                                          
+
                     # This one's unfortunate. LLD defaults to --no-allow-shlib-undefined
                     # but the libgcc_s.so.1 shipped with Ubuntu 22.04 has an undefined
                     # symbol for _dl_find_object@GLIBC_2.35
