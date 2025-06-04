@@ -619,12 +619,21 @@ def provision_10j_llvm_into(localdir: Path, version: str):
     def provision_clang_config_files(sysroot_path):
         match platform.system():
             case "Linux":
-                platform_specific_stuff = textwrap.dedent("""\
+                platform_specific_stuff = textwrap.dedent(f"""\
+                    # OCaml will explicitly pass -L/usr/lib/x86_64-linux-gnu
+                    # which throws a wrench in things because the version of glibc in the
+                    # sysroot assumes that the libc_nonshared.a file (implicitly linked by
+                    # the libc.so linker script) defines __libc_csu_init, but that
+                    # symbol has been removed in more recent versions of glibc. Thus,
+                    # combining old Scrt1.o from within the sysroot, with new libc_nonshared.a
+                    # from outside of the sysroot, results in a link error.
+                    # To avoid this outcome, we forcibly add the within-sysroot path
+                    # to take precedence over the external system path.
+                    -L <CFGDIR>/../sysroot/usr/lib/{platform.machine()}-linux-gnu/
+                                                          
                     # This one's unfortunate. LLD defaults to --no-allow-shlib-undefined
                     # but the libgcc_s.so.1 shipped with Ubuntu 22.04 has an undefined
-                    # symbol for _dl_find_object@GLIBC_2.35, and it seems like OCaml
-                    # explicitly links against the system library, via -L, rather than
-                    #  letting the compiler find it automatically in the sysroot.
+                    # symbol for _dl_find_object@GLIBC_2.35
                     -Wl,--allow-shlib-undefined
                     """)
             case _:
