@@ -829,6 +829,7 @@ def provision_10j_deps_into(localdir: Path, version: str):
                 ctx="(builddeps) ",
                 time_estimate="a jiffy",
             )
+            cook_pkg_config_within(localdir)
 
         case "Darwin":
             # For macOS, we don't do hermetic build deps; instead, we rely on homebrew.
