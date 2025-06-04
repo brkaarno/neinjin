@@ -727,7 +727,7 @@ def provision_10j_llvm_into(localdir: Path, version: str):
             time_estimate="twenty seconds or so",
         )
     else:
-        url = f"https://images.aarno-labs.com/amp/ben/{tarball_name}"
+        url = f"https://github.com/Aarno-Labs/tenjin-build-deps/releases/download/rev-03d4672c4/{tarball_name}"
         download_and_extract_tarball(
             url, hermetic.xj_llvm_root(localdir), ctx="(llvm) ", time_estimate="a minute"
         )
